@@ -179,6 +179,10 @@ c---------------------------------------------------------------------
       call rone (diff_e,npts)
       call rone (mu_n  ,npts)
       call rone (mu_p  ,npts)
+      write(*,*)'set mu_n and mu_p'
+         do i=1,npts
+            write(*,*)i,mu_n(i),mu_p(i)
+         enddo
       call rone (mu_e  ,npts)
       call rone (  ni  ,npts)
       call rone (charge,npts)
@@ -197,7 +201,7 @@ c---------------------------------------------------------------------
       include 'EMWAVE'
       include 'DRIFT'
       include 'POISSON'
-
+      integer i
       if     (ifbdf1) then      ! param(17)=-1: BDF1
          if(ifsol) then
          call cem_drift_source  ! param(6)= 1   (to turn on source)
@@ -722,6 +726,7 @@ C----------------------------------------------------------------------
       do i=1,npts
          tmp1=tmp0*sqrt(abs(cee(i,1)))
          tmp2=exp(tmp1)
+         write(*,*)'we are in mobility_update'
          mu_n(i)=mu_n0*tmp2
          mu_p(i)=mu_p0*tmp2
       enddo
@@ -759,27 +764,13 @@ c----------------------------------------------------------------------
       real  glmax,glmin,ff1,ff2,gg1,gg2,hh1,hh2
 
       npts= nx1*ny1*nz1*nelt
-
       if (icalled.eq.0) then
-
 c...  setup variable for poisson solve: [ h1*A + h2*B ] phi = B*rhs
           do ifld=1,nfield
           call rone         (dmask(1,ifld),npts)
           call dd_setdmaskp (dmask(1,ifld),npts,ifld)
           enddo
-
-c         ff1=glmax(dmask(1,1),npts)
-c         ff2=glmin(dmask(1,1),npts)
-c         gg1=glmax(dmask(1,2),npts)
-c         gg2=glmin(dmask(1,2),npts)
-c         hh1=glmax(dmask(1,3),npts)
-c         hh2=glmin(dmask(1,3),npts)
-
-c         if (nid.eq.0) write(6,*) 'DDDDDmask ff',ff1,ff2
-c         if (nid.eq.0) write(6,*) 'DDDDDmask gg',gg1,gg2
-c         if (nid.eq.0) write(6,*) 'DDDDDmask hh',hh1,hh2
-
-
+          
 c... added by Ying Oct 6, 2014
       ! check value for nfield, if nfield=1, set dmask(:,1)=dmask(:,2)=dmask(:,3)=dmask(:,4)
       if (nfield.eq.1) then
@@ -794,14 +785,15 @@ c... added by Ying Oct 6, 2014
           call rone    (h1,npts)
           if (.not.ifsol) call col2(h1,d_permit,npts)
           call rzero   (h2,npts)
-
+          do i=1,npts
+          write(*,*)'h1=',i,h1(i)
+          enddo
 !     Move data onto the device
 !$ACC ENTER DATA COPYIN(dmask,mult) CREATE(wk1)
 
           if (IFGFDMDD) call gfdm_init(nx1,ny1,nz1,.false.,0.0)
           icalled = 1
       endif
-
         if(ifpec.and.ifinhom) then
         call axhelm3(wk1,potent_b,h1,h2,1,1)
         call add2s2(rhs,wk1,-1.0,npts)
@@ -876,8 +868,7 @@ c...  param(21)= 1: IFGMRES=true
         if (nid.eq.0) write(6,*) 'define param(21) for poisson solver'
         call exitt(1)
       endif
-
-
+     
 c...  Add boundary conditions: pec + inhomogeneous boundary
 
       if (ifpec .and.ifinhom) call add2s2(potent,potent_b,1.0,npts)
@@ -973,14 +964,14 @@ c----------------------------------------------------------------------
       include 'EMWAVE'
       include 'RK5'
       real     wk1(lpts),wk2(lpts),wk3(lpts)
-      integer  idummy
+      integer  idummy,i
       real     glamax
       integer icalled
       save icalled
       data icalled/0/
       if (.not.ifsrc) return  ! param(6)=1 to turn on
 
-
+      
 !$ACC UPDATE HOST (resN,resP,resE,rhs)
 !$ACC UPDATE HOST (cN,cP,cE,potent)
       call usersrc (idummy,resN,resP,resE,rhs,wk2,wk3)
@@ -988,6 +979,9 @@ c----------------------------------------------------------------------
 !$ACC UPDATE DEVICE (scN,scP,scE)
 !$ACC UPDATE DEVICE (cN_b,cP_b,cE_b,potent_b)
       icalled = 1
+! 06/21/17 by ping hsuan
+! Every time you call usersrc, reN and resP will be set to zero in each time step  
+
 
       return
       end
@@ -1202,8 +1196,8 @@ c...  GMRES
 c...  Add boundary conditions: pec + inhomogeneous boundary
 
       if (ifpec .and.ifinhom) then
-c         call add2s2(cN,cn_b,1.0,npts)
-c         call add2s2(cP,cp_b,1.0,npts)
+         call add2s2(cN,cn_b,1.0,npts)
+         call add2s2(cP,cp_b,1.0,npts)
          if (ifexct) call add2s2(cE,ce_b,1.0,npts)
       endif
 
@@ -1344,6 +1338,10 @@ c...  and add it to the right-hand-side
       call rzero(wk_h1n,npts)
       call rzero(wk_h1p,npts)
       call copy(wk_h1n,cN,npts)
+      write(*,*)'mu_n and mu_p'
+      do i =1,npts
+      write(*,*)i,mu_n(i),mu_p(i)
+      enddo
       call col2(wk_h1n,mu_n,npts) ! wk_h1n= mu_n * cN  (=h1)
       call copy(wk_h1p,cP,npts)
       call col2(wk_h1p,mu_p,npts) ! wk_h1p= mu_p * cP  (=h1)
@@ -1352,12 +1350,11 @@ c...  and add it to the right-hand-side
       call drift_intp_u_grad_v(wk_cN,potent,wk_h1n)
       call drift_intp_u_grad_v(wk_cP,potent,wk_h1p)
       else
-      call axhelm3(wk_cN,potent,wk_h1n,h2,1,1)
+      call axhelm3(wk_cN,potent,wk_h1n,h2,1,1) 
       call axhelm3(wk_cP,potent,wk_h1p,h2,1,1)
       endif
       call add2s2 (resN,wk_cN, 1.0*dt,npts)
       call add2s2 (resP,wk_cP,-1.0*dt,npts)
-
 ! Adding terms for neumman boundary condition
 !$ACC DATA PRESENT(cemface_nmn,cemface,cee,unxm,unym,mu_n,aream,cN)
 !$ACC&     PRESENT(mu_p,cP)
@@ -1386,7 +1383,6 @@ c...  and add it to the right-hand-side
       enddo
 !$ACC END PARALLEL LOOP
 !$ACC END DATA
-
 ! Explicit scheme: Adding terms for robin boundary condition   jn\cdot n=+cn+g, g is included in source term 
       do i=1,ncemface_r(2)
          j=cemface_r(i,2)
@@ -1399,8 +1395,8 @@ c...  and add it to the right-hand-side
          i0=cemface(j)
          resP(i0)=resP(i0)+dt*cP(i0)*aream(j)
       enddo
-
 ! Adding terms for inhom PEC boundary condition
+! Something wrong in here.. 6/21/17 by pinghsuan
       if(ifpec.and.ifinhom) then
 c      call axhelm3(wk_cN,cN_b,h1n,h2n,1,1)
 c      call add2s2(resN,wk_cN,-1.0,npts)
@@ -1650,8 +1646,8 @@ c...  GMRES
 c.... Add boundary conditions: pec + inhomogeneous boundary
 
       if (ifpec .and.ifinhom) then
-c         call add2s2(cN,cn_b,1.0,npts)
-c         call add2s2(cP,cp_b,1.0,npts)
+         call add2s2(cN,cn_b,1.0,npts)
+         call add2s2(cP,cp_b,1.0,npts)
 c         if (ifexct) call add2s2(cE,ce_b,1.0,npts)
       endif
 
@@ -8887,7 +8883,6 @@ c-----------------------------------------------------------------------
       include 'SIZE'
       include 'TOTAL'
       real h1(1),h2(1)
-
 
       call ifill (nelfld,nelv,ldimt)
 
