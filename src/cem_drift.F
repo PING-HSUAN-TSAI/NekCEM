@@ -782,8 +782,7 @@ c... added by Ying Oct 6, 2014
           call rone    (mult,npts)
           call dssum   (mult,nx1,ny1,nz1)
           call invcol1 (mult,npts)
-          call rone    (h1,npts)
-          if (.not.ifsol) call col2(h1,d_permit,npts)
+          call copy    (h1,d_permit,npts)
           call rzero   (h2,npts)
           do i=1,npts
           write(*,*)'h1=',i,h1(i)
