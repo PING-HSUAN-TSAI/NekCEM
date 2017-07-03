@@ -110,7 +110,6 @@ c----------------------------------------------------------------------
 
       real dclock,pretime,endtime
       real dxmin
-
       call walltime(solve_wtime1)
       solve_time1 = dclock()
 

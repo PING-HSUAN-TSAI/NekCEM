@@ -161,6 +161,13 @@ c.... setup multiplicity
       call dssum   (mult,nx1,ny1,nz1)
       call invcol1 (mult,npts)
 
+      if (param(17) .eq. -5) then
+
+         call cem_drift_newton
+
+         return
+      endif
+
       return
       end
 c---------------------------------------------------------------------
@@ -186,7 +193,7 @@ c---------------------------------------------------------------------
       include 'DRIFT'
       include 'POISSON'
 
-      if     (ifbdf1) then    
+      if (ifbdf1) then    
 
          call cem_drift_source  
          call cem_drift_poisson 
@@ -376,7 +383,7 @@ c---------------------------------------------------------------------
       include 'BCS'
 
       integer  i,j,i0,isd,imsh,maxit
-      real     wk1(lpts),wk2(lpts), tol,glamax
+      real     wk1(lpts),wk2(lpts), tol,glamax,tmp
       real     diff_n_dt(lpts), diff_p_dt(lpts),diff_e_dt(lpts)
       real     dtbdi_n(lpts), dtbdi_p(lpts),dtbdi_e(lpts)
       integer  icalled
@@ -411,6 +418,9 @@ c...  get rhs for cN and cP
 
       call cem_drift_rhs_bdf1
 
+
+
+      
 c...  solve cn
 
       if (ifpec.and.ifinhom) then
@@ -484,7 +494,7 @@ c...  and add it to the right-hand-side
 
       call add2s2 (resN,wn, 1.0*dt,npts)
       call add2s2 (resP,wp,-1.0*dt,npts)
-
+           
       return
       end
 c---------------------------------------------------------------------
@@ -2003,3 +2013,59 @@ c
       return
       end
 c-----------------------------------------------------------------------
+      subroutine compute_energy
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'EMWAVE'
+      include 'POISSON'
+      
+      real energy_density(npts),energy
+      integer i,j,k
+      real dummy1(npts),dummy2(npts),dummy3(npts)
+      real dummy4(npts),dummy5(npts)
+      logical :: lexist
+      real glsum
+
+      call rzero(energy_density,npts)
+      call rzero(dummy1,npts)
+      call rzero(dummy2,npts)
+      call rzero(dummy3,npts)
+
+      call copy(dummy1,cN,npts)
+      call copy(dummy2,cP,npts)
+      call copy(dummy3,cP,npts)
+      
+      call add2s2(dummy3,cN,-1.0,npts)
+      call add2s2(dummy3,ni, 1.0,npts)
+      
+      call col2(dummy3,potent,npts)
+      call col2(dummy1,LOG(cN),npts)
+      call col2(dummy2,LOG(cP),npts)
+
+      call add2s2(energy_density,dummy1,1.0,npts)
+      call add2s2(energy_density,dummy2,1.0,npts)
+      call add2s2(energy_density,dummy3,0.5,npts)
+
+      call col2(energy_density,bmn,npts)
+      energy =  glsum(energy_density,npts)
+
+      if (nid.eq.0) then
+         write(*,*)'energy',time,energy
+      endif
+c      if (nid.eq.0) then
+c         inquire(file="energy.txt", exist=lexist)
+c         if (lexist) then
+c            open(12, file="energy.txt", status="old",
+c     $           position="append", action="write")
+c            write(12,*)time,energy
+c         else
+c            open(12, file="energy.txt", status="new", action="write")
+c            write(12,*)time,energy
+c         endif
+c       endif
+
+       return
+       end

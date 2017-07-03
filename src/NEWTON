@@ -1,0 +1,18 @@
+      common /NEWTONV/
+     $              sp_k(lpts1)
+     $            , sn_k(lpts1)
+     $            , gp_k(lpts1)
+     $            , gn_k(lpts1)
+     $            , cpi (lpts1)
+     $            , cni (lpts1)
+     $            , cpo (lpts1)
+     $            , cno (lpts1)
+     $            , cp_k(lpts1)
+     $            , cn_k(lpts1)
+     $            , fp  (lpts1)
+     $            , fn  (lpts1)
+     $            , dt_newton, dtinv
+
+      real sp_k,sn_k,gp_k,gn_k,cpi,cni,fp,fn
+      real cp_k,cn_k,cpo,cno
+      real dt_newton, dtinv
