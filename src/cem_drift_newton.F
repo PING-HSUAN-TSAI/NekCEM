@@ -40,13 +40,16 @@ c-----------------------------------------------------------------------
       include 'DRIFT'      
       include 'POISSON'
       include 'NEWTON'
+      include 'CTIMER'
+      include 'RTIMER'
 
       real alpha, tt
       real new_tol, tol, jaceps
       real glmax,glsc2,rnorm,rnorm1,rnorm2
       integer i, j, k, n
       integer maxit
-     
+      real glsum 
+
       call cem_drift_newton_init
 
       call copy (cp_k,cP,npts) ! get the initial condition 
@@ -61,8 +64,13 @@ c-----------------------------------------------------------------------
 
       dt_newton = param(1)  ! pseudo-transient time step
                      ! it can grow as istep increase 
+      cpu_t = 0.0
+      cpu_chk = 0.0
+     
+
       do istep = 1, nsteps 
 
+         cpu_dtime = dclock()
 c      if (mod(istep,5).eq.0) then
 c         dt = dt * 1.5
 c      endif
@@ -116,9 +124,15 @@ c      endif
          enddo
 900   continue
       
+      cpu_dtime = dclock()-cpu_dtime
+      cpu_t = cpu_t+cpu_dtime
+      cpu_t_step = cpu_t/istep
+      cpu_p_t = glsum(cpu_t_step /npts,1)/np
+
       time = time + dt
 
-      dt_newton = dt_newton * 10
+
+      dt_newton = dt_newton * 1.5
 c      dt = dt * 1.5
 c      if (mod(istep,5) .eq. 0) then
 c         dt = dt * 1.5 
@@ -370,7 +384,7 @@ c           !modified Gram-Schmidt
 
             if ((nid.eq.0).and.(istep.le.5))
      $           write (6,66) iter,tolpss,rnorm,istep
-   66       format(i5,1p2e12.5,i8,' gmres rnorm')
+   66       format(i5,1p2e12.5,i8,' gmres_newton rnorm')
 
             if (rnorm .lt. tolps) goto 900 !converged
             if (j.eq.m) goto 1000 !not converged, restart
@@ -407,10 +421,10 @@ c     write(6,*) 'end of solving least squre problem'
 c      call ortho   (res) ! Orthogonalize wrt null space, if present
 
       if (nid.eq.0) then
-          if ((mod(istep,iocomm).eq.0).or.(istep.le.10))
+          if ((mod(istep,iocomm).eq.0).or.(istep.le.3))
      $    write(6,9999) istep,iter,tolpss
       endif
- 9999 format(' ',' ',i9,' gmres   : iteration#',i5,1p3e12.4)
+ 9999 format(' ',' ',i9,' gmres_newton_iteration#',i5,1p3e12.4)
 
       return
       end

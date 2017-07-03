@@ -13,7 +13,7 @@
   0                             9: ---
   0.0                           10: fintim: final time if positive; overrides nsteps. Ignored if negative.
   100                           11: nsteps: total number of timesteps
- -0.000001  12: dt:
+ -0.1  12: dt:
   10                            13: iocomm: frequency of print statements
   0.000000E+00                  14: ---
   1                            15: iostep: frequency of vtk writes
