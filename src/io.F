@@ -144,6 +144,13 @@ C----------------------------------------------------------------------
       include 'PML'
       include 'RTIMER'
 
+      integer lt
+      parameter(lt=lx1*ly1*lz1*lelt)
+      common /myfields/ perm(lt),diff(lt),distp(lt),psrc(lt)
+     $                , phip(lt),phix(lt),phiy(lt),phiz(lt)
+      real perm,diff,distp,psrc,phip
+      real phix,phiy,phiz
+
       common  /outvtk/vtkout1(3*lx1*ly1*lz1*lelt)
      $               ,vtkout2(3*lx1*ly1*lz1*lelt)
      $               ,vtkout3(3*lx1*ly1*lz1*lelt)
@@ -246,7 +253,8 @@ c...  this produces output for (io-option=iparam) with timing info
 #elif defined DRIFT
          call vtk_nonswap_field( cN, cP, potent,vtkout1)
          call vtk_nonswap_field(scN,scP,spotent,vtkout2)
-         call vtk_nonswap_field(cnj(1,1),cnj(1,2),cnj(1,3),vtkout3)
+         call vtk_nonswap_field(d_permit,diff,psrc,vtkout3)
+c         call vtk_nonswap_field(cnj(1,1),cnj(1,2),cnj(1,3),vtkout3)
          call vtk_nonswap_field(cpj(1,1),cpj(1,2),cpj(1,3),vtkout4)
 #elif defined MAXWELL
          call vtk_nonswap_field(EN(1,1),EN(1,2),EN(1,3),vtkout1)

@@ -11,8 +11,9 @@
      $            , cn_k(lpts1)
      $            , fp  (lpts1)
      $            , fn  (lpts1)
-     $            , dt_newton, dtinv
+     $            , dt_newton, dtinv, newton_iter
 
       real sp_k,sn_k,gp_k,gn_k,cpi,cni,fp,fn
       real cp_k,cn_k,cpo,cno
       real dt_newton, dtinv
+      integer newton_iter

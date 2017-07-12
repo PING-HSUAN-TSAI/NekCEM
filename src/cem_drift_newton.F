@@ -46,69 +46,98 @@ c-----------------------------------------------------------------------
       real alpha, tt
       real new_tol, tol, jaceps
       real glmax,glsc2,rnorm,rnorm1,rnorm2
+      real fnorm,fnorm1,fnorm2
       integer i, j, k, n
       integer maxit
-      real glsum 
-
-      call cem_drift_newton_init
-
-      call copy (cp_k,cP,npts) ! get the initial condition 
-      call copy (cn_k,cN,npts) ! get the initial condition
+      real glsum
+      real f_pre, f_now
 
       alpha = 1      ! relaxation parameter \alpha \in (0,1]             
-      nsteps = 40    ! steps for pseudo-transient continuation
+      nsteps = 200   ! steps for pseudo-transient continuation
       maxit = 20     ! iteration for Newton method
       jaceps = 1e-5  ! perturbation parameter for Jacobi-free
       tol = 1e-4     ! tolerance for GMRES
       new_tol = 1e-7 ! tolerance for Newton method
 
       dt_newton = param(1)  ! pseudo-transient time step
-                     ! it can grow as istep increase 
+                            ! it can grow as istep increase 
+
+      write(*,*)'Jaceps=',jaceps
+
       cpu_t = 0.0
       cpu_chk = 0.0
-     
+
+      call cem_drift_newton_init
+
+      call copy (cp_k,cP,npts) ! get the initial condition 
+      call copy (cn_k,cN,npts) ! get the initial condition
+
+      call copy(cpi,cp_k,npts)
+      call copy(cni,cn_k,npts)
+
+      call compute_gk      ! compute rhs g_k for GMRES
+
+      fnorm1 = glsc2(fp,fp,npts)  
+      fnorm2 = glsc2(fn,fn,npts)
+      fnorm1 = sqrt(fnorm1)
+      fnorm2 = sqrt(fnorm2)
+      fnorm  = max(fnorm1,fnorm2)
+
+      f_now = fnorm
+      write(*,*)'f_res_ini',f_now
+
+      call chsign (gp_k,npts)
+      call chsign (gn_k,npts)
+
+      call compute_energy  ! check the energy of the system in 
+                           ! each pseudo-time step    
 
       do istep = 1, nsteps 
 
          cpu_dtime = dclock()
-c      if (mod(istep,5).eq.0) then
-c         dt = dt * 1.5
-c      endif
-         call rzero(sp_k,npts)! set sp_k = 0 
-         call rzero(sn_k,npts)! set sn_k = 0
-         
-         call copy(cpi,cp_k,npts)
-         call copy(cni,cn_k,npts)
+
+         call rzero(sp_k,npts)   ! set sp_k = 0 
+         call rzero(sn_k,npts)   ! set sn_k = 0
+
+         if ((istep .eq. 1)) then
+            dt_newton = param(1)
+         else 
+            dt_newton = dt_newton * f_pre/f_now
+            write(*,*)'istep=',istep,f_pre,f_now
+            write(*,*)'ratio_f_res',f_pre/f_now
+         end if
+c         call copy(cpi,cp_k,npts)
+c         call copy(cni,cn_k,npts)
         
-         call compute_gk      ! compute rhs g_k for GMRES
+c         call compute_gk      ! compute rhs g_k for GMRES
 
-         call compute_energy  ! check the energy of the system in 
-                              ! each pseudo-time step
-         
-         call chsign (gp_k,npts)
-         call chsign (gn_k,npts)
+c         call compute_energy  ! check the energy of the system in 
+                               ! each pseudo-time step        
+c         call chsign (gp_k,npts)
+c         call chsign (gn_k,npts)
 
-         do k = 1, maxit
+         do newton_iter = 1, maxit
             
             call drift_hmh_gmres_newton   ! solve sn_k
      $      (sn_k,gn_k,cn_k,cp_k,fn,jaceps,npts,tol,dt_newton,2)
             call chk_amax('sn_k',sn_k,npts)
-
+            
             call drift_hmh_gmres_newton   ! solve sp_k
      $      (sp_k,gp_k,cp_k,cn_k,fp,jaceps,npts,tol,dt_newton,1)
             call chk_amax('sp_k',sp_k,npts)
             
             call add2s2(cp_k,sp_k,alpha,npts)   ! cp_k = cp_k + alpha * sp_k
             call add2s2(cn_k,sn_k,alpha,npts)   ! cn_k = cn_k + alpha * sn_k
-            
+
+            write(*,*)'newton_iter=',newton_iter            
+            write(*,*)'cpi and cni inside newton'
+            call chk_amax  ('cpn',cpi,npts)
+            call chk_amax  ('cnn',cni,npts)
 
             call compute_gk   ! compute rhs g_k for checking tolerance
                               ! and also store for next Newton iteration
             call chsign (gp_k,npts)
             call chsign (gn_k,npts)
-             
-            call copy(cP,cp_k,npts) ! just for cem_out
-            call copy(cN,cn_k,npts) ! just for cem_out
 
             rnorm1 = glsc2(gp_k,gp_k,npts)
             rnorm2 = glsc2(gn_k,gn_k,npts)
@@ -117,28 +146,50 @@ c      endif
             rnorm  = max(rnorm1,rnorm2)
             
             if (nid .eq. 0) then
-            write(*,*)'newton',istep,k,rnorm,rnorm1,rnorm2,dt_newton,dt
+               write(*,*)'newton',istep,newton_iter,rnorm,rnorm1,rnorm2
+     $                           ,dt_newton,dt
             end if 
+
+c`            if (rnorm .gt. 1e5) call exitt
 
             if (rnorm .lt. new_tol) goto 900
          enddo
 900   continue
       
+c      dt = dt * 1.5
+c      dt = dt_newton
+
+      call copy(cpi,cp_k,npts)   ! update cp_i for compute gp
+      call copy(cni,cn_k,npts)   ! update cn_i for compute gn
+
+      write(*,*)'cpi and cni outside newton'
+      call chk_amax('cpo',cpi,npts)
+      call chk_amax('cno',cni,npts)
+
+      call copy(cP,cp_k,npts) ! just for cem_out
+      call copy(cN,cn_k,npts) ! just for cem_out
+      
+      fnorm1 = glsc2(fp,fp,npts)  
+      fnorm2 = glsc2(fn,fn,npts)
+      fnorm1 = sqrt(fnorm1)
+      fnorm2 = sqrt(fnorm2)
+      fnorm  = max(fnorm1,fnorm2)
+      f_pre = f_now
+      f_now = fnorm
+      write(*,*)'f_res_outside_newton',istep,f_now
+
       cpu_dtime = dclock()-cpu_dtime
       cpu_t = cpu_t+cpu_dtime
       cpu_t_step = cpu_t/istep
       cpu_p_t = glsum(cpu_t_step /npts,1)/np
-
-      time = time + dt
-
-
-      dt_newton = dt_newton * 1.5
-c      dt = dt * 1.5
-c      if (mod(istep,5) .eq. 0) then
-c         dt = dt * 1.5 
-c      endif
-c      dt = dt_newton
       
+      time = time + dt
+  
+c      dt_newton = dt_newton * 1.5
+
+c      dt = dt_newton 
+
+      call compute_energy
       call userchk
       call cem_out
       
@@ -168,7 +219,9 @@ c-----------------------------------------------------------------------
       call rzero(fn,npts)
 
       call compute_f ! compute f(u^{n}_k)
-      
+     
+      dtinv = 1./dt_newton
+
       call rzero(gp_k,npts)
       call rzero(gn_k,npts)
 
@@ -180,7 +233,9 @@ c-----------------------------------------------------------------------
 
       call add2s2(gp_k,cp_k,1.0,npts)
       call add2s2(gn_k,cn_k,1.0,npts)
-
+     
+      call cmult(gp_k,dtinv,npts)   ! case with divided by dt_newton
+      call cmult(gn_k,dtinv,npts)   ! case with divided by dt_newton
       return
       
       end
@@ -246,7 +301,8 @@ c-----------------------------------------------------------------------
       real     fo(npts), f(npts)
       real     eps, epsinv
       integer  iflag
-
+      
+      call chk_amax('pin',p,npts)
       call rzero  (Jp,npts)
       call copy   (tmp,u0,npts)
       call add2s2 (tmp,p,eps,npts)
@@ -262,38 +318,35 @@ c-----------------------------------------------------------------------
       call copy   (cN,tmp,npts)
 
       endif
-      call chk_amax('Jb1',cP,npts)
-      call chk_amax('Jb2',cN,npts)
 
       call cem_drift_source
       call cem_drift_poisson
       call cem_drift_sem_bdf1
 
-      call chk_amax('Ja1',cP,npts)
-      call chk_amax('Ja2',cN,npts)
+      ttinv  = 1./tt    ! tt for dt_newton
+      epsinv = 1./eps   ! eps for approximation for jacobian
+      dtinv  = 1./dt    ! dt for bdf1
 
-      ttinv  = 1./tt
-      epsinv = 1./eps
-      dtinv  = 1./dt
       if (iflag .eq. 1) then
 
-      call sub3   (fo,cP,tmp,npts)
-      call cmult  (fo,dtinv,npts)
-      call sub3   (tmp1,fo,f,npts)
-      call cmult  (tmp1,epsinv,npts)
-      call cmult  (tmp1,tt,npts)
-      call sub3   (Jp,p,tmp1,npts)
-      
+      call sub3   (fo,cP,tmp,npts)     ! fo = cP - tmp
+      call cmult  (fo,dtinv,npts)      ! fo = fo / dt
+      call sub3   (tmp1,fo,f,npts)     ! tmp1 = fo - f
+      call cmult  (tmp1,epsinv,npts)   ! tmp1 = (fo-f)/eps
+      call cmult  (tmp1,tt,npts)       ! tmp1 = (fo-f)*dt_newton/eps
+      call sub3   (Jp,p,tmp1,npts)     ! Jp = p - tmp1
+      call cmult(Jp,ttinv,npts)        ! Jp = p/dt_newton - (fo-f)/eps     
+                                       ! case with divided by dt_newton
       else if (iflag .eq. 2) then
 
-      call sub3   (fo,cN,tmp,npts)
-      call cmult  (fo,dtinv,npts)
-      call sub3   (tmp1,fo,f,npts)
-      call cmult  (tmp1,epsinv,npts)
-      call cmult  (tmp1,tt,npts)
-      call sub3   (Jp,p,tmp1,npts)
-
-      
+      call sub3   (fo,cN,tmp,npts)     ! fo = cN - tmp
+      call cmult  (fo,dtinv,npts)      ! fo = fo / dt
+      call sub3   (tmp1,fo,f,npts)     ! tmp1 = fo - f
+      call cmult  (tmp1,epsinv,npts)   ! tmp1 = (fo-f)/eps
+      call cmult  (tmp1,tt,npts)       ! tmp1 = (fo-f)*dt_newton/eps
+      call sub3   (Jp,p,tmp1,npts)     ! Jp = p - tmp1
+      call cmult(Jp,ttinv,npts)        ! Jp = p/dt_newton - (fo-f)/eps
+                                       ! case with divided by dt_newton
       endif
 
       return
@@ -308,6 +361,8 @@ c     GMRES iteration.
       include 'TOTAL'
       include 'FDMH1'
       include 'GMRES'
+      include 'NEWTON'
+
       integer  n,outer, iflag
       real     phi(n),res(n),h1(n),h2(n),wt(n),mask(n)
       real     tol,alpha,l,temp
@@ -332,6 +387,7 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
          if(iter.eq.0) then
             call copy  (r,res,n)                  ! r = res
          else
+            write(*,*)'restart'
             !update residual
             call copy   (r,res,n)                  ! r = res
             call Jacobi_free (w,u0,u1,f,x,eps,tt,iflag)! w = A x
@@ -352,16 +408,23 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
          !write(6,*) 'start form m-th krylov subspace'
          do j=1,m
             iter = iter+1
-            
+            write(*,*)'iter=',iter
+            call chk_amax('vj1',v(1,j),npts)   
             call Jacobi_free (w,u0,u1,f,v(1,j),eps,tt,iflag) ! w = A v
+            call chk_amax('wjf',w,npts)
 
 c           !modified Gram-Schmidt
             do i=1,j
+               call chk_amax('wgs',w,npts)
+               call chk_amax('v1i',v(1,i),npts)
                h(i,j)=glsc2(w,v(1,i),n)           ! h    = (w,v )
                                                   ! i,j       i
+               write(*,*)'h_ij',h(i,j)
                call add2s2(w,v(1,i),-h(i,j),n)    ! w = w - h    v
             enddo                                 !         i,j  i
 
+
+            call chk_amax('w2',w,npts)
 
             !apply Givens rotations to new column
             do i=1,j-1
@@ -370,7 +433,9 @@ c           !modified Gram-Schmidt
                h(i+1,j)= -s(i)*temp + c(i)*h(i+1,j)
             enddo
                                                  !            ______
+            call chk_amax('w3',w,npts)
             alpha = sqrt(glsc2(w,w,n))        ! alpha =  \/ (w,w)
+            write(*,*)'alpha=',alpha
             if(alpha.eq.0.) goto 900 !converged
             l = sqrt(h(j,j)*h(j,j)+alpha*alpha)
             temp = 1./l
@@ -391,7 +456,8 @@ c           !modified Gram-Schmidt
 
             temp = 1./alpha
             call cmult2(v(1,j+1),w,temp,n)   ! v    = w / alpha
-                                             !  j+1
+            write(*,*)'temp',temp            !  j+1
+            call chk_amax('vjf',v(1,j+1),npts)
          enddo
 c        write(6,*) 'end of forming m-th krylov subspace'
   900    iconv = 1
@@ -421,10 +487,11 @@ c     write(6,*) 'end of solving least squre problem'
 c      call ortho   (res) ! Orthogonalize wrt null space, if present
 
       if (nid.eq.0) then
+          write(*,*)'istep=',istep
           if ((mod(istep,iocomm).eq.0).or.(istep.le.3))
-     $    write(6,9999) istep,iter,tolpss
+     $    write(6,9999) istep,newton_iter,iter,tolpss
       endif
- 9999 format(' ',' ',i9,' gmres_newton_iteration#',i5,1p3e12.4)
+ 9999 format(' ',' ',i9,i5,' gmres_newton_iteration#',i5,1p3e12.4)
 
       return
       end
