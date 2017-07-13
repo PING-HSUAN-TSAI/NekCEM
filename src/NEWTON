@@ -12,8 +12,10 @@
      $            , fp  (lpts1)
      $            , fn  (lpts1)
      $            , dt_newton, dtinv, newton_iter
+     $            , dt_newton_inv, epsinv, jaceps
 
       real sp_k,sn_k,gp_k,gn_k,cpi,cni,fp,fn
       real cp_k,cn_k,cpo,cno
       real dt_newton, dtinv
       integer newton_iter
+      real epsinv, dt_newton_inv, jaceps

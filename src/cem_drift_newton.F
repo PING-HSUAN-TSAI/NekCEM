@@ -44,8 +44,9 @@ c-----------------------------------------------------------------------
       include 'RTIMER'
 
       real alpha, tt
-      real new_tol, tol, jaceps
+      real new_tol, tol
       real glmax,glsc2,rnorm,rnorm1,rnorm2
+      real rinorm1, rinorm2, rinorm
       real fnorm,fnorm1,fnorm2
       integer i, j, k, n
       integer maxit
@@ -56,11 +57,15 @@ c-----------------------------------------------------------------------
       nsteps = 200   ! steps for pseudo-transient continuation
       maxit = 20     ! iteration for Newton method
       jaceps = 1e-5  ! perturbation parameter for Jacobi-free
-      tol = 1e-4     ! tolerance for GMRES
-      new_tol = 1e-7 ! tolerance for Newton method
+      epsinv = 1./jaceps   ! eps for approximation for jacobian
+      tol = 1e-2     ! tolerance for GMRES
+      new_tol = 1e-5 ! tolerance for Newton method
 
       dt_newton = param(1)  ! pseudo-transient time step
                             ! it can grow as istep increase 
+                            
+      dtinv = 1./dt
+      dt_newton_inv = 1./dt_newton
 
       write(*,*)'Jaceps=',jaceps
 
@@ -84,7 +89,6 @@ c-----------------------------------------------------------------------
       fnorm  = max(fnorm1,fnorm2)
 
       f_now = fnorm
-      write(*,*)'f_res_ini',f_now
 
       call chsign (gp_k,npts)
       call chsign (gn_k,npts)
@@ -101,29 +105,30 @@ c-----------------------------------------------------------------------
 
          if ((istep .eq. 1)) then
             dt_newton = param(1)
+c            dt = dt_newton
          else 
             dt_newton = dt_newton * f_pre/f_now
-            write(*,*)'istep=',istep,f_pre,f_now
-            write(*,*)'ratio_f_res',f_pre/f_now
+c            dt = dt_newton
          end if
-c         call copy(cpi,cp_k,npts)
-c         call copy(cni,cn_k,npts)
-        
-c         call compute_gk      ! compute rhs g_k for GMRES
 
-c         call compute_energy  ! check the energy of the system in 
-                               ! each pseudo-time step        
-c         call chsign (gp_k,npts)
-c         call chsign (gn_k,npts)
+         dtinv = 1./dt
+         dt_newton_inv = 1./dt_newton
 
+c         rinorm1 = glsc2(gp_k,gp_k,npts)
+c         rinorm2 = glsc2(gn_k,gn_k,npts)
+c         rinorm1 = sqrt(rinorm1)
+c         rinorm2 = sqrt(rinorm2)
+c         rinorm  = max(rinorm1,rinorm2)
+c         write(*,*)'rinorm=',rinorm
+         
          do newton_iter = 1, maxit
             
             call drift_hmh_gmres_newton   ! solve sn_k
-     $      (sn_k,gn_k,cn_k,cp_k,fn,jaceps,npts,tol,dt_newton,2)
+     $      (sn_k,gn_k,cn_k,cp_k,fn,npts,tol,2)
             call chk_amax('sn_k',sn_k,npts)
             
             call drift_hmh_gmres_newton   ! solve sp_k
-     $      (sp_k,gp_k,cp_k,cn_k,fp,jaceps,npts,tol,dt_newton,1)
+     $      (sp_k,gp_k,cp_k,cn_k,fp,npts,tol,1)
             call chk_amax('sp_k',sp_k,npts)
             
             call add2s2(cp_k,sp_k,alpha,npts)   ! cp_k = cp_k + alpha * sp_k
@@ -139,25 +144,38 @@ c         call chsign (gn_k,npts)
             call chsign (gp_k,npts)
             call chsign (gn_k,npts)
 
-            rnorm1 = glsc2(gp_k,gp_k,npts)
-            rnorm2 = glsc2(gn_k,gn_k,npts)
-            rnorm1 = sqrt(rnorm1)
-            rnorm2 = sqrt(rnorm2)
-            rnorm  = max(rnorm1,rnorm2)
-            
+            if (newton_iter .eq. 1 ) then
+
+               rinorm1 = glsc2(gp_k,gp_k,npts)
+               rinorm2 = glsc2(gn_k,gn_k,npts)
+               rinorm1 = sqrt(rinorm1)
+               rinorm2 = sqrt(rinorm2)
+               rinorm  = max(rinorm1,rinorm2)
+               
+               if (nid .eq. 0) then
+                  write(*,*)'newton',istep,newton_iter,rinorm,rinorm1
+     $                              ,rinorm2,dt_newton,dt
+               end if 
+            else 
+               rnorm1 = glsc2(gp_k,gp_k,npts)
+               rnorm2 = glsc2(gn_k,gn_k,npts)
+               rnorm1 = sqrt(rnorm1)
+               rnorm2 = sqrt(rnorm2)
+               rnorm  = max(rnorm1,rnorm2)
+
             if (nid .eq. 0) then
-               write(*,*)'newton',istep,newton_iter,rnorm,rnorm1,rnorm2
-     $                           ,dt_newton,dt
+               write(*,*)'newton',istep,newton_iter,rnorm/rinorm,rnorm1
+     $                           ,rnorm2,dt_newton,dt
             end if 
 
 c`            if (rnorm .gt. 1e5) call exitt
 
-            if (rnorm .lt. new_tol) goto 900
+            if (rnorm/rinorm .lt. new_tol) goto 900
+
+            endif
          enddo
 900   continue
       
-c      dt = dt * 1.5
-c      dt = dt_newton
 
       call copy(cpi,cp_k,npts)   ! update cp_i for compute gp
       call copy(cni,cn_k,npts)   ! update cn_i for compute gn
@@ -176,7 +194,6 @@ c      dt = dt_newton
       fnorm  = max(fnorm1,fnorm2)
       f_pre = f_now
       f_now = fnorm
-      write(*,*)'f_res_outside_newton',istep,f_now
 
       cpu_dtime = dclock()-cpu_dtime
       cpu_t = cpu_t+cpu_dtime
@@ -220,8 +237,6 @@ c-----------------------------------------------------------------------
 
       call compute_f ! compute f(u^{n}_k)
      
-      dtinv = 1./dt_newton
-
       call rzero(gp_k,npts)
       call rzero(gn_k,npts)
 
@@ -233,9 +248,10 @@ c-----------------------------------------------------------------------
 
       call add2s2(gp_k,cp_k,1.0,npts)
       call add2s2(gn_k,cn_k,1.0,npts)
-     
-      call cmult(gp_k,dtinv,npts)   ! case with divided by dt_newton
-      call cmult(gn_k,dtinv,npts)   ! case with divided by dt_newton
+      
+      write(*,*)'dtnewtoninv_gk',dt_newton_inv
+      call cmult(gp_k,dt_newton_inv,npts)   ! case with divided by dt_newton
+      call cmult(gn_k,dt_newton_inv,npts)   ! case with divided by dt_newton
       return
       
       end
@@ -259,11 +275,11 @@ c-----------------------------------------------------------------------
       call copy(cP,cp_k,npts) 
       call copy(cN,cn_k,npts)
       
-      
+      if (nid .eq. 0)   write(*,*)'compute_fb_dt',dt 
       call cem_drift_source
       call cem_drift_poisson
       call cem_drift_sem_bdf1
-
+      if (nid .eq. 0)   write(*,*)'compute_fa_dt',dt
 
       call copy(cpo,cP,npts)
       call copy(cno,cN,npts)
@@ -271,11 +287,9 @@ c-----------------------------------------------------------------------
       call sub3(fp,cpo,cp_k,npts)
       call sub3(fn,cno,cn_k,npts)
 
-      dtinv = 1./dt ! dtinv = 1./dt_newton
-
       call cmult(fp,dtinv,npts)
       call cmult(fn,dtinv,npts)
-
+      if (nid .eq. 0)    write(*,*)'compute_f_dtinv',dtinv
       return
       end
 c-----------------------------------------------------------------------
@@ -287,26 +301,38 @@ c        J_k s_k = s_k - (dt /eps) *  ( f(u_k + eps*s_k) - f(u_k) )
 c   
 c     where f(u_k) has been store in each Newton iteration
 c           f(u_k + eps*s_k) has to be computed in each GMRES iteration
-      subroutine Jacobi_free(Jp,u0,u1,f,p,eps,tt,iflag)
+      subroutine Jacobi_free(Jp,u0,u1,f,p,iflag)
 c-----------------------------------------------------------------------
       implicit none
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
+      include 'NEWTON'
 
-      real     tt, ttinv, dtinv  
       real     Jp(npts), p(npts)
       real     u0(npts), u1(npts)
       real     tmp(npts), tmp1(npts)
       real     fo(npts), f(npts)
-      real     eps, epsinv
       integer  iflag
+      real     eps
+      real     pnorm,unorm,glsc2
+     
       
-      call chk_amax('pin',p,npts)
+      pnorm = glsc2(p,p,npts)
+      unorm = glsc2(u0,u0,npts)
+      pnorm = sqrt(pnorm)
+      unorm = sqrt(unorm)
+      eps = (1+unorm)*1e-14
+      eps = sqrt(eps)
+      eps = eps/pnorm
+      epsinv = 1./eps
+      write(*,*)'1_epsinv',epsinv,1./eps
+      if (nid .eq. 0) write(*,*)istep,newton_iter,'eps=',eps
+
       call rzero  (Jp,npts)
       call copy   (tmp,u0,npts)
-      call add2s2 (tmp,p,eps,npts)
-
+      call add2s2 (tmp,p,eps,npts) !jaceps -> eps
+      
       if (iflag .eq. 1) then
       
       call copy   (cP,tmp,npts)
@@ -318,34 +344,28 @@ c-----------------------------------------------------------------------
       call copy   (cN,tmp,npts)
 
       endif
-
+      
       call cem_drift_source
       call cem_drift_poisson
       call cem_drift_sem_bdf1
 
-      ttinv  = 1./tt    ! tt for dt_newton
-      epsinv = 1./eps   ! eps for approximation for jacobian
-      dtinv  = 1./dt    ! dt for bdf1
-
       if (iflag .eq. 1) then
-
       call sub3   (fo,cP,tmp,npts)     ! fo = cP - tmp
       call cmult  (fo,dtinv,npts)      ! fo = fo / dt
       call sub3   (tmp1,fo,f,npts)     ! tmp1 = fo - f
       call cmult  (tmp1,epsinv,npts)   ! tmp1 = (fo-f)/eps
-      call cmult  (tmp1,tt,npts)       ! tmp1 = (fo-f)*dt_newton/eps
+      call cmult  (tmp1,dt_newton,npts)       ! tmp1 = (fo-f)*dt_newton/eps
       call sub3   (Jp,p,tmp1,npts)     ! Jp = p - tmp1
-      call cmult(Jp,ttinv,npts)        ! Jp = p/dt_newton - (fo-f)/eps     
-                                       ! case with divided by dt_newton
+      call cmult  (Jp,dt_newton_inv,npts)        ! Jp = p/dt_newton - (fo-f)/eps     
+      write(*,*)'2_epsinv',epsinv                  ! case with divided by dt_newton
       else if (iflag .eq. 2) then
-
       call sub3   (fo,cN,tmp,npts)     ! fo = cN - tmp
       call cmult  (fo,dtinv,npts)      ! fo = fo / dt
       call sub3   (tmp1,fo,f,npts)     ! tmp1 = fo - f
       call cmult  (tmp1,epsinv,npts)   ! tmp1 = (fo-f)/eps
-      call cmult  (tmp1,tt,npts)       ! tmp1 = (fo-f)*dt_newton/eps
+      call cmult  (tmp1,dt_newton,npts)       ! tmp1 = (fo-f)*dt_newton/eps
       call sub3   (Jp,p,tmp1,npts)     ! Jp = p - tmp1
-      call cmult(Jp,ttinv,npts)        ! Jp = p/dt_newton - (fo-f)/eps
+      call cmult  (Jp,dt_newton_inv,npts)        ! Jp = p/dt_newton - (fo-f)/eps
                                        ! case with divided by dt_newton
       endif
 
@@ -353,7 +373,7 @@ c-----------------------------------------------------------------------
       end
 c-----------------------------------------------------------------------
       subroutine drift_hmh_gmres_newton
-     $           (phi,res,u0,u1,f,eps,n,tol,tt,iflag)
+     $           (phi,res,u0,u1,f,n,tol,iflag)
 c-----------------------------------------------------------------------
 c     Solve the Helmholtz equation by right-preconditioned
 c     GMRES iteration.
@@ -361,7 +381,6 @@ c     GMRES iteration.
       include 'TOTAL'
       include 'FDMH1'
       include 'GMRES'
-      include 'NEWTON'
 
       integer  n,outer, iflag
       real     phi(n),res(n),h1(n),h2(n),wt(n),mask(n)
@@ -390,7 +409,7 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
             write(*,*)'restart'
             !update residual
             call copy   (r,res,n)                  ! r = res
-            call Jacobi_free (w,u0,u1,f,x,eps,tt,iflag)! w = A x
+            call Jacobi_free (w,u0,u1,f,x,iflag)! w = A x
             call add2s2 (r,w,-1.,n) ! r = r - w
          endif
 
@@ -410,7 +429,7 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
             iter = iter+1
             write(*,*)'iter=',iter
             call chk_amax('vj1',v(1,j),npts)   
-            call Jacobi_free (w,u0,u1,f,v(1,j),eps,tt,iflag) ! w = A v
+            call Jacobi_free (w,u0,u1,f,v(1,j),iflag) ! w = A v
             call chk_amax('wjf',w,npts)
 
 c           !modified Gram-Schmidt

@@ -478,6 +478,7 @@ c-----------------------------------------------------------------------
 
       call col3 (wn,cn,bm1,npts)
       call col3 (wp,cp,bm1,npts)
+      if (nid .eq. 0 ) write(6,*)'1 dt_rhs=',dt
       call add2s1 (resN,wn,dt,npts) ! resN=cN+dt*(resN) with weights
       call add2s1 (resP,wp,dt,npts) ! resP=cP+dt*(resP) with weights
 
@@ -492,6 +493,7 @@ c...  and add it to the right-hand-side
       call axhelm3(wn,potent,w_h1n,h2,1,1)
       call axhelm3(wp,potent,w_h1p,h2,1,1)
 
+      if (nid .eq. 0 ) write(6,*)'2 dt_rhs=',dt
       call add2s2 (resN,wn, 1.0*dt,npts)
       call add2s2 (resP,wp,-1.0*dt,npts)
            
