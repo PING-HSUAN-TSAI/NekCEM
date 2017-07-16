@@ -164,6 +164,13 @@ c.... setup multiplicity
       call dssum   (mult,nx1,ny1,nz1)
       call invcol1 (mult,npts)
 
+      if (param(17) .eq. -5) then
+
+         call cem_drift_newton
+
+         return
+      endif
+
       return
       end
 c---------------------------------------------------------------------
@@ -413,34 +420,53 @@ c...  get rhs for cN and cP
 
 c...  solve cn
 
-      call bcneusc (wa,npts,2,-1)
-      call add2 (h2n,wa,npts)
-      call bcdirsc (cn,npts,1)
-      call axhelm3 (wa,cn,h1n,h2n,1,1)
-      call sub3 (wb,resN,wa,npts) 
-      call bcneusc (wa,npts,2,1)
-      call add2 (wb,wa,npts) 
+c      call bcneusc (wa,npts,2,-1)
+c      call add2 (h2n,wa,npts)
+c      call bcdirsc (cn,npts,1)
+c      call axhelm3 (wa,cn,h1n,h2n,1,1)
+c      call sub3 (wb,resN,wa,npts) 
+c      call bcneusc (wa,npts,2,1)
+c      call add2 (wb,wa,npts) 
+
+c      call dssum (wb,nx1,ny1,nz1)
+c      call col2 (wb,dmask(1,2),npts)
+c      call cggo2(wa,wb,h1n,h2n,mult,dmask(1,2),imsh,isd,npts,tol,maxit)
+c      call add2 (cn,wa,npts)
+
+      call axhelm3 (wa,cn_b,h1n,h2n,1,1)
+      call sub3    (wb,resN,wa,npts)
+
 
       call dssum (wb,nx1,ny1,nz1)
       call col2 (wb,dmask(1,2),npts)
       call cggo2(wa,wb,h1n,h2n,mult,dmask(1,2),imsh,isd,npts,tol,maxit)
-      call add2 (cn,wa,npts)
+      call  add3(cn,cn_b,wa,npts)
+
 
 c...  solve cp
 
-      call bcneusc (wa,npts,3,-1)       
-      call add2 (h2p,wa,npts)
-      call bcdirsc (cp,npts,1)
-      call axhelm3 (wa,cp,h1p,h2p,1,1)
+c      call bcneusc (wa,npts,3,-1)       
+c      call add2 (h2p,wa,npts)
+c      call bcdirsc (cp,npts,1)
+c      call axhelm3 (wa,cp,h1p,h2p,1,1)
+c      call sub3 (wb,resP,wa,npts)
+c      call bcneusc (wa,npts,3,1)
+c      call add2 (wb,wa,npts)        
+
+c      call dssum (wb,nx1,ny1,nz1)
+c      call col2 (wb,dmask(1,3),npts)
+c      call cggo2(wa,wb,h1p,h2p,mult,dmask(1,3),imsh,isd,npts,tol,maxit)
+c      call add2(cp,wa,npts)
+
+
+      call axhelm3 (wa,cp_b,h1p,h2p,1,1)
       call sub3 (wb,resP,wa,npts)
-      call bcneusc (wa,npts,3,1)
-      call add2 (wb,wa,npts)        
+
 
       call dssum (wb,nx1,ny1,nz1)
       call col2 (wb,dmask(1,3),npts)
       call cggo2(wa,wb,h1p,h2p,mult,dmask(1,3),imsh,isd,npts,tol,maxit)
-      call add2(cp,wa,npts)
-
+      call add3(cp,cp_b,wa,npts)
       return
       end
 c---------------------------------------------------------------------
@@ -459,7 +485,6 @@ c-----------------------------------------------------------------------
       call col3 (wp,cp,bm1,npts)
       call add2s1 (resN,wn,dt,npts) ! resN=cN+dt*(resN) with weights
       call add2s1 (resP,wp,dt,npts) ! resP=cP+dt*(resP) with weights
-
 c...  resN=resN + wN: (wN= -cn\grad\Phi,\grad v), h1= mu_n*cN, h2=0
 c...  resP=resP - wP: (wP=  cp\grad\Phi,\grad v), h1= mu_p*cP, h2=0
 c...  compute the nonlinear terms: cN*(grad(phi),cP*(grad(phi)
@@ -467,13 +492,10 @@ c...  and add it to the right-hand-side
 
       call col3(w_h1n,cn,mu_n,npts) ! wk_h1n= mu_n * cN   (=h1)
       call col3(w_h1p,cp,mu_p,npts) ! wk_h1p= mu_p * cP  (=h1)
-
       call axhelm3(wn,potent,w_h1n,h2,1,1)
       call axhelm3(wp,potent,w_h1p,h2,1,1)
-
       call add2s2 (resN,wn, 1.0*dt,npts)
       call add2s2 (resP,wp,-1.0*dt,npts)
-
       return
       end
 c---------------------------------------------------------------------
@@ -1995,6 +2017,51 @@ c
 
          enddo
 
+      endif
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine compute_energy
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'POISSON'
+
+      real energy_density(npts),energy
+      integer i,j,k
+      real dummy1(npts),dummy2(npts),dummy3(npts)
+      real dummy4(npts),dummy5(npts)
+      logical :: lexist
+      real glsum
+
+      call rzero(energy_density,npts)
+      call rzero(dummy1,npts)
+      call rzero(dummy2,npts)
+      call rzero(dummy3,npts)
+
+      call copy(dummy1,cN,npts)
+      call copy(dummy2,cP,npts)
+      call copy(dummy3,cP,npts)
+
+      call add2s2(dummy3,cN,-1.0,npts)
+      call add2s2(dummy3,ni, 1.0,npts)
+
+      call col2(dummy3,potent,npts)
+      call col2(dummy1,LOG(cN),npts)
+      call col2(dummy2,LOG(cP),npts)
+
+      call add2s2(energy_density,dummy1,1.0,npts)
+      call add2s2(energy_density,dummy2,1.0,npts)
+      call add2s2(energy_density,dummy3,0.5,npts)
+
+      call col2(energy_density,bmn,npts)
+      energy =  glsum(energy_density,npts)
+
+      if (nid.eq.0) then
+         write(*,*)'energy',time,energy
       endif
 
       return
