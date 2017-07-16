@@ -53,21 +53,18 @@ c-----------------------------------------------------------------------
       real glsum
       real f_pre, f_now
 
-      alpha = 1      ! relaxation parameter \alpha \in (0,1]             
-      nsteps = 200   ! steps for pseudo-transient continuation
-      maxit = 20     ! iteration for Newton method
-      jaceps = 1e-5  ! perturbation parameter for Jacobi-free
+      alpha = 1            ! relaxation parameter \alpha \in (0,1]             
+      nsteps = 200         ! steps for pseudo-transient continuation
+      maxit = 20           ! iteration for Newton method
+      jaceps = 1e-5        ! perturbation parameter for Jacobi-free
       epsinv = 1./jaceps   ! eps for approximation for jacobian
-      tol = 1e-2     ! tolerance for GMRES
-      new_tol = 1e-5 ! tolerance for Newton method
+      tol = 1e-2           ! tolerance for GMRES
+      new_tol = 1e-5       ! tolerance for Newton method
 
-      dt_newton = param(1)  ! pseudo-transient time step
-                            ! it can grow as istep increase 
-                            
+      dt_newton = param(1) ! pseudo-transient time step
+                           ! it can grow as istep increase 
       dtinv = 1./dt
       dt_newton_inv = 1./dt_newton
-
-      write(*,*)'Jaceps=',jaceps
 
       cpu_t = 0.0
       cpu_chk = 0.0
@@ -93,19 +90,22 @@ c-----------------------------------------------------------------------
       call chsign (gp_k,npts)
       call chsign (gn_k,npts)
 
-      call compute_energy  ! check the energy of the system in 
-                           ! each pseudo-time step    
+      call compute_energy  ! check the energy of the system in the initial
+                           ! stage
 
+c     start pseudo-time step
       do istep = 1, nsteps 
 
          cpu_dtime = dclock()
 
-         call rzero(sp_k,npts)   ! set sp_k = 0 
-         call rzero(sn_k,npts)   ! set sn_k = 0
+         call rzero(sn_k,npts)
+         call rzero(sp_k,npts)
 
+c        SER for tau^{istep}
          if ((istep .eq. 1)) then
             dt_newton = param(1)
-c            dt = dt_newton
+c            dt = dt_newton   ! dt varing in 
+                              ! pseudo-time step
          else 
             dt_newton = dt_newton * f_pre/f_now
 c            dt = dt_newton
@@ -113,16 +113,10 @@ c            dt = dt_newton
 
          dtinv = 1./dt
          dt_newton_inv = 1./dt_newton
-
-c         rinorm1 = glsc2(gp_k,gp_k,npts)
-c         rinorm2 = glsc2(gn_k,gn_k,npts)
-c         rinorm1 = sqrt(rinorm1)
-c         rinorm2 = sqrt(rinorm2)
-c         rinorm  = max(rinorm1,rinorm2)
-c         write(*,*)'rinorm=',rinorm
          
+c        start Newton iteration
          do newton_iter = 1, maxit
-            
+
             call drift_hmh_gmres_newton   ! solve sn_k
      $      (sn_k,gn_k,cn_k,cp_k,fn,mult,npts,tol,2)
             
@@ -131,11 +125,6 @@ c         write(*,*)'rinorm=',rinorm
             
             call add2s2(cp_k,sp_k,alpha,npts)   ! cp_k = cp_k + alpha * sp_k
             call add2s2(cn_k,sn_k,alpha,npts)   ! cn_k = cn_k + alpha * sn_k
-
-            write(*,*)'newton_iter=',newton_iter            
-            write(*,*)'cpi and cni inside newton'
-            call chk_amax  ('cpn',cpi,npts)
-            call chk_amax  ('cnn',cni,npts)
 
             call compute_gk   ! compute rhs g_k for checking tolerance
                               ! and also store for next Newton iteration
@@ -166,8 +155,6 @@ c         write(*,*)'rinorm=',rinorm
      $                           ,rnorm2,dt_newton,dt
             end if 
 
-c`            if (rnorm .gt. 1e5) call exitt
-
            if (rnorm/rinorm .lt. new_tol) goto 900
 c            if (rnorm .lt. new_tol) goto 900
 
@@ -176,24 +163,23 @@ c            if (rnorm .lt. new_tol) goto 900
 900   continue
       
 
-      call copy(cpi,cp_k,npts)   ! update cp_i for compute gp
+      call copy(cpi,cp_k,npts)   ! update cp_i for compute gp 
       call copy(cni,cn_k,npts)   ! update cn_i for compute gn
-
-      write(*,*)'cpi and cni outside newton'
-      call chk_amax('cpo',cpi,npts)
-      call chk_amax('cno',cni,npts)
+                                 ! for next pseudo-time step
 
       call copy(cP,cp_k,npts) ! just for cem_out
       call copy(cN,cn_k,npts) ! just for cem_out
-      
+
+c     compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
       fnorm1 = glsc3(fp,fp,mult,npts)  
       fnorm2 = glsc3(fn,fn,mult,npts)
       fnorm1 = sqrt(fnorm1)
       fnorm2 = sqrt(fnorm2)
       fnorm  = max(fnorm1,fnorm2)
-      f_pre = f_now
-      f_now = fnorm
+      f_pre = f_now  ! set up old fnorm to f_pre
+      f_now = fnorm  ! set up new fnorm to f_now
 
+c     compute the CPU_time
       cpu_dtime = dclock()-cpu_dtime
       cpu_t = cpu_t+cpu_dtime
       cpu_t_step = cpu_t/istep
@@ -201,12 +187,10 @@ c            if (rnorm .lt. new_tol) goto 900
       
       time = time + dt
   
-c      dt_newton = dt_newton * 1.5
-
-c      dt = dt_newton 
-
       call compute_energy
+
       call userchk
+
       call cem_out
       
       enddo
@@ -250,8 +234,8 @@ c-----------------------------------------------------------------------
       
       call cmult(gp_k,dt_newton_inv,npts)   ! case with divided by dt_newton
       call cmult(gn_k,dt_newton_inv,npts)   ! case with divided by dt_newton
+
       return
-      
       end
 c-----------------------------------------------------------------------
 c     This routine computes nonlinear f by using time integration method
@@ -266,13 +250,13 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
       include 'DRIFT'
       include 'NEWTON'
-      
+      include 'POISSON' 
       call rzero(fp,npts)
       call rzero(fn,npts)
 
       call copy(cP,cp_k,npts) 
       call copy(cN,cn_k,npts)
-      
+
       call cem_drift_source
       call cem_drift_poisson
       call cem_drift_sem_bdf1
@@ -285,6 +269,7 @@ c-----------------------------------------------------------------------
 
       call cmult(fp,dtinv,npts)
       call cmult(fn,dtinv,npts)
+
       return
       end
 c-----------------------------------------------------------------------
@@ -318,14 +303,16 @@ c-----------------------------------------------------------------------
       unorm = glsc3(u0,u0,mult,npts)
       pnorm = sqrt(pnorm)
       unorm = sqrt(unorm)
-      eps = (1+unorm)*1e-14
+
+      eps = (1+unorm)*1e-14   ! formula for varing eps
       eps = sqrt(eps)
       eps = eps/pnorm
+                              ! In the case using cn_b cp_b
+                              ! do update boundary, eps will 
+                              ! not blow up
       epsinv = 1./eps
 
-      write(*,*)'1_epsinv',epsinv,1./eps
-
-      if (nid .eq. 0) write(*,*)istep,newton_iter,'eps=',eps
+      if (nid .eq. 0) write(*,*)istep,newton_iter,'eps=',eps,epsinv
 
       call rzero  (Jp,npts)
       call copy   (tmp,u0,npts)
@@ -349,26 +336,25 @@ c-----------------------------------------------------------------------
 
       if (iflag .eq. 1) then
 
-      call sub3   (fo,cP,tmp,npts)     ! fo = cP - tmp
-      call cmult  (fo,dtinv,npts)      ! fo = fo / dt
-      call sub3   (tmp1,fo,f,npts)     ! tmp1 = fo - f
-      call cmult  (tmp1,epsinv,npts)   ! tmp1 = (fo-f)/eps
-      call cmult  (tmp1,dt_newton,npts)       ! tmp1 = (fo-f)*dt_newton/eps
-      call sub3   (Jp,p,tmp1,npts)     ! Jp = p - tmp1
-      call cmult  (Jp,dt_newton_inv,npts)        ! Jp = p/dt_newton - (fo-f)/eps     
-
-      write(*,*)'2_epsinv',epsinv                  ! case with divided by dt_newton
+      call sub3   (fo,cP,tmp,npts)        ! fo = cP - tmp
+      call cmult  (fo,dtinv,npts)         ! fo = fo / dt
+      call sub3   (tmp1,fo,f,npts)        ! tmp1 = fo - f
+      call cmult  (tmp1,epsinv,npts)      ! tmp1 = (fo-f)/eps
+      call cmult  (tmp1,dt_newton,npts)   ! tmp1 = (fo-f)*dt_newton/eps
+      call sub3   (Jp,p,tmp1,npts)        ! Jp = p - tmp1
+      call cmult  (Jp,dt_newton_inv,npts) ! Jp = p/dt_newton - (fo-f)/eps     
+                                          ! case with divided by dt_newton
 
       else if (iflag .eq. 2) then
 
-      call sub3   (fo,cN,tmp,npts)     ! fo = cN - tmp
-      call cmult  (fo,dtinv,npts)      ! fo = fo / dt
-      call sub3   (tmp1,fo,f,npts)     ! tmp1 = fo - f
-      call cmult  (tmp1,epsinv,npts)   ! tmp1 = (fo-f)/eps
-      call cmult  (tmp1,dt_newton,npts)       ! tmp1 = (fo-f)*dt_newton/eps
-      call sub3   (Jp,p,tmp1,npts)     ! Jp = p - tmp1
-      call cmult  (Jp,dt_newton_inv,npts)        ! Jp = p/dt_newton - (fo-f)/eps
-                                       ! case with divided by dt_newton
+      call sub3   (fo,cN,tmp,npts)        ! fo = cN - tmp
+      call cmult  (fo,dtinv,npts)         ! fo = fo / dt
+      call sub3   (tmp1,fo,f,npts)        ! tmp1 = fo - f
+      call cmult  (tmp1,epsinv,npts)      ! tmp1 = (fo-f)/eps
+      call cmult  (tmp1,dt_newton,npts)   ! tmp1 = (fo-f)*dt_newton/eps
+      call sub3   (Jp,p,tmp1,npts)        ! Jp = p - tmp1
+      call cmult  (Jp,dt_newton_inv,npts) ! Jp = p/dt_newton - (fo-f)/eps
+                                          ! case with divided by dt_newton
       endif
 
       return
@@ -383,6 +369,7 @@ c     GMRES iteration.
       include 'TOTAL'
       include 'FDMH1'
       include 'GMRES'
+      include 'NEWTON'
 
       integer  n,outer, iflag
       real     phi(n),res(n),wt(n)
@@ -408,7 +395,6 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
          if(iter.eq.0) then
             call copy  (r,res,n)                  ! r = res
          else
-            write(*,*)'restart'
             !update residual
             call copy   (r,res,n)                  ! r = res
             call Jacobi_free (w,u0,u1,f,x,iflag)! w = A x
@@ -417,9 +403,11 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
 
          gamma(1) = glsc3(r,r,wt,n)                ! gamma  = (r,r)
          gamma(1) = sqrt(gamma(1))                 ! gamma  = sqrt{ (r,r) }
-         !write(6,*) 'initial residule',gamma(1)
-         tolps = 0.01*gamma(1)                     !      1
-         tolpss = tolps
+         !write(6,*) 'initial residule',gamma(1)   !     1
+
+         tolps = 0.1*gamma(1)  ! tolerance for gmres                   
+         tolpss = tolps        ! by using inexact Newton method
+                               ! 0.1 for forcing term and is changable
 
          !check for lucky convergence
          rnorm = 0.
@@ -430,6 +418,7 @@ c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
          !write(6,*) 'start form m-th krylov subspace'
          do j=1,m
             iter = iter+1
+
             write(*,*)'iter=',iter
             call Jacobi_free (w,u0,u1,f,v(1,j),iflag) ! w = A v
 
@@ -499,12 +488,10 @@ c     write(6,*) 'end of solving least squre problem'
 c      call ortho   (res) ! Orthogonalize wrt null space, if present
 
       if (nid.eq.0) then
-          write(*,*)'istep=',istep
-          write(*,*)'newton_iter=',newton_iter
           if ((mod(istep,iocomm).eq.0).or.(istep.le.3))
      $    write(6,9999) istep,newton_iter,iter,tolpss
       endif
- 9999 format(' ',' ',i9,i5,' gmres_newton_iteration#',i5,1p3e12.4)
+ 9999 format(' ',' ',i9,i6,'  gmres_newton_iteration#',i6,1p1e12.4)
 
       return
       end

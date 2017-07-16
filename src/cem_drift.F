@@ -241,7 +241,7 @@ c----------------------------------------------------------------------
       real dummy(lx1*ly1*lz1*lelt)
 
       call usersrc (time,resN,resP,resE,rhs,dummy,dummy)
- 
+
       return
       end
 c-----------------------------------------------------------------------
@@ -271,6 +271,7 @@ c...  setup helmholtz: [h1 A + h2 B] u = rhs where u = u_0+u_b
         icalled = 1
       endif
 
+      call chk_amax('pot',potent_b,npts)
 c...  setup helmholtz: [h1 A + h2 B] u_0 = rhs - h1 A u_b
       if (ifpec.and.ifinhom) then
         call axhelm3 (wa,potent_b,h1,h2,1,1) 
@@ -418,8 +419,6 @@ c...  get rhs for cN and cP
 
       call cem_drift_rhs_bdf1
 
-
-
       
 c...  solve cn
 
@@ -440,7 +439,6 @@ c...  solve cn
       else
         call copy (cn,wa,npts)      ! wb = rhs
       endif
-
 c...  solve cp
 
       if (ifpec.and.ifinhom) then
@@ -452,7 +450,6 @@ c...  solve cp
 
       call dssum (wb,nx1,ny1,nz1)
       call col2 (wb,dmask(1,3),npts)
-
       call cggo2(wa,wb,h1p,h2p,mult,dmask(1,3),
      $   imsh,isd,npts,tol,maxit)
 
@@ -478,10 +475,8 @@ c-----------------------------------------------------------------------
 
       call col3 (wn,cn,bm1,npts)
       call col3 (wp,cp,bm1,npts)
-      if (nid .eq. 0 ) write(6,*)'1 dt_rhs=',dt
       call add2s1 (resN,wn,dt,npts) ! resN=cN+dt*(resN) with weights
       call add2s1 (resP,wp,dt,npts) ! resP=cP+dt*(resP) with weights
-
 c...  resN=resN + wN: (wN= -cn\grad\Phi,\grad v), h1= mu_n*cN, h2=0
 c...  resP=resP - wP: (wP=  cp\grad\Phi,\grad v), h1= mu_p*cP, h2=0
 c...  compute the nonlinear terms: cN*(grad(phi),cP*(grad(phi)
@@ -489,14 +484,10 @@ c...  and add it to the right-hand-side
 
       call col3(w_h1n,cn,mu_n,npts) ! wk_h1n= mu_n * cN   (=h1)
       call col3(w_h1p,cp,mu_p,npts) ! wk_h1p= mu_p * cP  (=h1)
-
       call axhelm3(wn,potent,w_h1n,h2,1,1)
       call axhelm3(wp,potent,w_h1p,h2,1,1)
-
-      if (nid .eq. 0 ) write(6,*)'2 dt_rhs=',dt
       call add2s2 (resN,wn, 1.0*dt,npts)
       call add2s2 (resP,wp,-1.0*dt,npts)
-           
       return
       end
 c---------------------------------------------------------------------
