@@ -302,6 +302,7 @@ c...  solve u_0 after assemble and mask for boundary on right hand side
 
       if (ifsemg) then
         call copy      (wa,wb,npts)
+!        call drift_hmh_gmres2(wa,wb,h1,h2,mult,mask,isd,imsh,npts,tol)
         call hmh_gmres_mg (wa,h1,h2,mult,mask,maxit)
       else
         call cggo2 (wa,wb,h1,h2,mult,mask,imsh,isd,npts,tol,maxit)

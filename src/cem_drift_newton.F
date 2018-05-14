@@ -44,18 +44,19 @@ c-----------------------------------------------------------------------
       real alpha,tt
       real tolNT,tolGMRES
       real glmax,glsc3 
-      real rnorm,rnorms(lcdim)
+      real rnorm,rnorms(lcdim),rnormsold(lcdim)
       real rinorm,rinorms(lcdim),ratio
-      real fnorm,fnorms(lcdim)
+      real fnorm,fnorms(lcdim),resout(lcdim),forcing(lcdim)
       real temp(lpts1)
 
       integer i,j,k,n,ic,isep
       integer maxit
       real glsum
-      real f_pre,f_now
+      real f_pre,f_now,f_ratio
       real max_dtNT,min_tol
+      real const
 
-      isep = 1 ! 0=couple, 1=separate, Lan
+      isep = 0 ! 0=couple, 1=separate, Lan
 
       alpha = 1            ! relaxation parameter \alpha \in (0,1]             
 c     nsteps = 200         ! steps for pseudo-transient continuation
@@ -66,10 +67,19 @@ c     nsteps = 200         ! steps for pseudo-transient continuation
       tolNT = 1e-5       ! tolerance for Newton method
 
       dtNT = param(1) ! pseudo-transient time step
-                           ! it can grow as istep increase 
-      max_dtNT  = 1E5   ! Max. of dtNT, avoid NaN
+                      ! it can grow as istep increase 
+
+      max_dtNT  = 1E20   ! Max. of dtNT, avoid NaN
+                        ! If max_dtNT set higher than 1e7, dt = dtNT case will fail
+                        ! If max_dtNT set higher than 1e12, dt = 1e4 dtNT case will fail
       min_tol   = 1E-12 ! Min. of tol,  avoid NaN
 
+      const = 0.0001 ! constant c for the formula dt = c * dtNT
+                ! c = 1, 0.1, 0.01, 0.001, 0.0001
+                ! c = 0.0001 is the best case up to now
+
+      call compute_cfl(npts)
+      call assign_relation(const) ! assign relation between dtNT and dt
       dtinv = 1./dt
       dtNTinv = 1./dtNT
 
@@ -96,41 +106,91 @@ c     nsteps = 200         ! steps for pseudo-transient continuation
       fnorm = glmax(fnorms,lcdim)
       f_now = fnorm
 
-C      call compute_energy  ! check the energy of the system in the initial
-                           ! stage
 c     start pseudo-time step
       do istep = 1,nsteps 
 
         cpu_dtime = dclock()
 
+        call compute_cfl(npts)
+
 c       SER for tau^{istep}
         if ((istep .eq. 1)) then
           dtNT = param(1)
-c          dt = dt_newton
+          call assign_relation(const)
         else
           if (f_now.lt.min_tol) then
             dtNT = max_dtNT
+            call assign_relation(const)            
+c            dt = dtNT
+
+c          if (f_now.lt.min_tol .and. max_dtNT/dtNT .ge. 1e3) then
+c            dtNT = dtNT * 1e2
+c            dt = dtNT
+c          else if (f_now.lt.min_tol .and. max_dtNT/dtNT < 1e3) then
+c            dtNT = max_dtNT
+c            dt = dtNT
           else 
-            dtNT = dtNT * f_pre/f_now
-c            dt = dt_newton
+c            if (f_pre/f_now .ge. 5) then
+c               dtNT = dtNT * 5
+c               call assign_relation(const)
+c            else
+c               dtNT = dtNT * f_pre/f_now
+               f_ratio = f_pre/f_now
+               call dtNT_formula(f_ratio,2)
+c               dtNT = dtNT * 10
+               call assign_relation(const)
+c            endif
           endif
         endif
+
         if (dtNT.gt.max_dtNT) then
           dtNT = max_dtNT           
+          call assign_relation(const)
         endif
+
+        if (dt .gt. 1e-1) then
+          dt = 1e-1
+        endif
+
         dtinv = 1./dt
         dtNTinv = 1./dtNT
          
+c       write(6,*) 'check3',dt,dtinv
 c       start Newton iteration
 
         do iterNT=1,maxit
+          if (iterNT == 1) then
+           
+            do ic = 1,lcdim
+              rnormsold(ic) = fnorms(ic)
+              forcing(ic) = 0.1  
+            enddo
+          else
+            do ic = 1,lcdim
+c              if (rnorms(ic)/rnormsold(ic) .ge. 1) then
+c                forcing(ic) = 0.1
+c              else  
+c              forcing(ic) = rnorms(ic)/rnormsold(ic)
+              forcing(ic) = 0.1
+c              endif
+
+              if (nid.eq.0) then
+                 write(6,*)istep,iterNT,'forcing_term',ic,forcing(ic)
+              endif   
+
+c              forcing(ic) = abs(rnorms(ic)-resout(ic))/rnormsold(ic)
+              rnormsold(ic) = rnorms(ic)
+            enddo
+          endif
+
           if (ifsteric) then
             call drift_hmh_gmres_NTsteric(sn_k,gn_k,cn_k,fn
      $           ,mult,lcdim,npts,tolGMRES)
           else
             do ic = 1,lcdim
               call drift_hmh_gmres_newton(sn_k(1,ic),gn_k(1,ic)
-     $             ,cn_k,fn(1,ic),mult,lcdim,npts,tolGMRES,ic,isep)
+     $             ,cn_k,fn(1,ic),mult,lcdim,npts,resout(ic),forcing(ic)
+     $             ,tolGMRES,ic,isep)
             enddo
           endif
           do ic = 1,lcdim
@@ -148,6 +208,7 @@ c       start Newton iteration
             rnorms(ic) = sqrt(rnorms(ic))
           enddo
           rnorm = glmax(rnorms,lcdim)
+
           if (iterNT.eq.1) rinorm=rnorm
           ratio=rnorm/rinorm 
 
@@ -183,7 +244,7 @@ c       compute the CPU_time
         cpu_t_step = cpu_t/istep
         cpu_p_t = glsum(cpu_t_step /npts,1)/np
         
-        time = time + dt
+        time = time + dtNT
     
         call compute_energy
 
@@ -224,6 +285,89 @@ c-----------------------------------------------------------------------
         call cmult(gon(1,ic),dtNTinv,n)   ! case with divided by dt_newton
       enddo
 
+      return
+      end
+c-----------------------------------------------------------------------
+c     This routine deals with the relation between dtNT and dt
+      subroutine assign_relation(const)
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'NEWTON'
+      integer n,ic
+      real const
+
+      dt = const * dtNT
+
+      return
+      end
+c-----------------------------------------------------------------------
+c     This routine deals with the selection for dtNT
+c     Two selections for dtNT, one is based on SER
+c        dtNT = dtNT * f_pre/f_now
+c     another is based on increasing it with a constant 
+c        dtNt = dtNT * c
+      subroutine dtNT_formula(f_ratio,iflag)
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'NEWTON'
+      integer n,ic,iflag
+      real const, f_ratio
+
+      if (iflag .eq. 1) then
+        dtNT = dtNT * 10
+      elseif (iflag .eq. 2) then
+c        if (f_ratio .ge. 1e2) then
+c          dtNT = dtNT * 100
+c        else
+          dtNt = dtNT * f_ratio 
+c        endif  
+      endif  
+
+      return
+      end
+c-----------------------------------------------------------------------
+c     This routine computes the value of delta t that satisfies 
+c     CFL condition for Advection Diffusion equation 
+c     Based on the following formulas:
+c     c * \delta t / \delta x .le. 1, where c is the maximum of the 
+c     electric field
+c     D * \delta t / \delta x ^2 .le. 1/2, where D is the Diffusion coefficient
+      subroutine compute_cfl(n)
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'NEWTON'
+      real dxmin,cond1,cond2
+      real tmp1,tmp2,tmp3,tmp4,tmp5,tmpf1,tmpf2
+      real glmax
+      integer n
+
+
+      call get_dxmin(dxmin)
+      tmp1 = glmax(gradp(1,1),n)
+      tmp2 = glmax(gradp(1,2),n)
+      tmp3 = glmax(gradp(1,3),n)
+      tmpf1 = max(tmp1,tmp2)
+      tmpf1 = max(tmp3,tmpf1)
+      write(6,*) 'maximum of electric field',tmpf1
+
+      tmp4 = glmax(mu_n(1,1),n)
+      tmp5 = glmax(mu_n(1,2),n)
+      tmpf2 = max(tmp4,tmp5)
+      write(6,*) 'maximum of diffusion coefficient',tmpf2
+      
+      cond1 = dxmin / tmpf1
+      cond2 = dxmin**2/(2*tmpf2) 
+      write(6,*) 'delta t should not greater than',cond1,cond2
+      
       return
       end
 c-----------------------------------------------------------------------
@@ -309,14 +453,22 @@ c-----------------------------------------------------------------------
       real     fi(lpts1)            ! parameters
       real     uep(lpts1,lcdim)     ! uc + eps p
       real     foi(lpts1),fon(lpts1,lcdim)
-      integer  n,iflag,ic,isep
+      integer  n,iflag,ic,isep,i
       real     eps,pnorm,unorm,glsc3 
 
+      
+      call chk_amax('a11',p)
+      call chk_amax('wt1',mult)
       pnorm = glsc3(p,p,mult,n)
       unorm = glsc3(uc(1,iflag),uc(1,iflag),mult,n)
+c      if ((nid.eq.0)) then
+c         write(6,11) istep,iterNT,pnorm,unorm
+c      endif
+c 11   format (2i8,' pnorm=',1p3e17.7)
       pnorm = sqrt(pnorm)
       unorm = sqrt(unorm)
 
+!      eps = 1e-9
       eps = (1+unorm)*1e-14   ! formula for varing eps
       eps = sqrt(eps)         ! for using the case using 
                               ! "ub" filled with previous
@@ -325,12 +477,14 @@ c-----------------------------------------------------------------------
       eps = eps/pnorm         ! this eps will blow up because of 
                               ! pnorm = 0
       epsinv = 1./eps         
+!      write(6,*)'eps',eps
 
-c     if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) then
-c         write(6,10) istep,newton_iter,eps,epsinv
-c     endif
+      if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) then
+         write(6,10) istep,iterNT,eps,epsinv,pnorm
+      endif
 
-c 10  format (2i8,' eps=',1p2e17.7)
+ 10   format (2i8,' eps=',1p3e17.7)
+
       do ic = 1,lcdim
         call copy(uep(1,ic),uc(1,ic),n)
       enddo
@@ -407,90 +561,97 @@ c 10  format (2i8,' eps=',1p2e17.7)
       end
 c-----------------------------------------------------------------------
       subroutine drift_hmh_gmres_newton
-     $           (phi,res,uc,f,wt,nion,n,tol,iflag,isep)
+     $           (phi,res,uc,f,wt,nion,n,ro,forcing,tol,iflag,isep)
 c-----------------------------------------------------------------------
 c     Solve the Helmholtz equation by right-preconditioned
 c     GMRES iteration.
       include 'SIZE'
+      include 'DRIFT'
       include 'TOTAL'
       include 'FDMH1'
-      include 'GMRES'
+      include 'NGMRES'
+      include 'NEWTON'
 
       integer  n,noin,outer,iflag,isep
       real     phi(lpts1),res(lpts1),wt(lpts1)
-      real     tol,alpha,l,temp
+      real     tol,alpha,l,temp,ro,forcing
       real     eps,uc(lpts1,nion),f(lpts1)
       real*8   etime1,dnekclock
 
 c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
      
       iter  = 0
-      m     = lgmres
+      m     = lgmres  ! lgmres = 50
 
       tolps = tol
       tolpss= tolps
       iconv = 0
       
-      call rzero(x,n)
-      call rzero(h,m*m)
+      call rzero(x_NT,n)
+      call rzero(h_NT,m*m)
 
       outer = 0
       do while (iconv.eq.0.and.iter.lt.500)
          outer = outer+1
          if(iter.eq.0) then
-            call copy  (r,res,n)                  ! r = res
+            call copy  (r_NT,res,n)                  ! r = res
          else
             !update residual
-            call copy   (r,res,n)                  ! r = res
-            call JacobiMatVec(w,x,uc,f,n,iflag,isep)! w = A x
-            call add2s2 (r,w,-1.,n) ! r = r - w
+            call copy   (r_NT,res,n)                  ! r = res
+            call JacobiMatVec(w_NT,x_NT,uc,f,n,iflag,isep)! w = A x
+            call add2s2 (r_NT,w_NT,-1.,n) ! r = r - w
          endif
 
-         gamma(1) = glsc3(r,r,wt,n)                ! gamma  = (r,r)
-         gamma(1) = sqrt(gamma(1))                 ! gamma  = sqrt{ (r,r) }
+         gamma_NT(1) = glsc3(r_NT,r_NT,wt,n)                ! gamma  = (r,r)
+         gamma_NT(1) = sqrt(gamma_NT(1))                 ! gamma  = sqrt{ (r,r) }
 
-         tolps = 0.1*gamma(1)  ! tolerance for gmres                   
+         tolps = forcing*gamma_NT(1)  ! tolerance for gmres                   
          tolpss = tolps        ! by using inexact Newton method
                                ! 0.1 for forcing term and is changable
+c         if ((nid.eq.0))  then
+c            write(6,*) istep,iter,'tolps,tolpss',tolps,tolpss,forcing
+c         endif
+            
 
          !check for lucky convergence
          rnorm = 0.
-         if(gamma(1) .eq. 0.) goto 9000
-         temp = 1./gamma(1)
-         call cmult2(v(1,1),r,temp,n)             !  v  = r / gamma
+         if(gamma_NT(1) .eq. 0.) goto 9000
+         temp = 1./gamma_NT(1)
+         call cmult2(v_NT(1,1),r_NT,temp,n)             !  v  = r / gamma
                                                   !  1            1
+
          !write(6,*) 'start form m-th krylov subspace'
          do j=1,m
             iter = iter+1
-
-            call JacobiMatVec(w,v(1,j),uc,f,n,iflag,isep) ! w = A v
+            call chk_amax('ajj',v_NT(1,j))            
+            call JacobiMatVec(w_NT,v_NT(1,j),uc,f,n,iflag,isep) ! w = A v
 
             !modified Gram-Schmidt
             do i=1,j
-               h(i,j)=glsc3(w,v(1,i),wt,n)        ! h    = (w,v )
+               h_NT(i,j)=glsc3(w_NT,v_NT(1,i),wt,n)        ! h    = (w,v )
                                                   ! i,j       i
-               call add2s2(w,v(1,i),-h(i,j),n)    ! w = w - h    v
+               call add2s2(w_NT,v_NT(1,i),-h_NT(i,j),n)    ! w = w - h    v
             enddo                                 !         i,j  i
 
 
             !apply Givens rotations to new column
             do i=1,j-1
-               temp = h(i,j)
-               h(i  ,j)=  c(i)*temp + s(i)*h(i+1,j)
-               h(i+1,j)= -s(i)*temp + c(i)*h(i+1,j)
+               temp = h_NT(i,j)
+               h_NT(i  ,j)=  c_NT(i)*temp + s_NT(i)*h_NT(i+1,j)
+               h_NT(i+1,j)= -s_NT(i)*temp + c_NT(i)*h_NT(i+1,j)
             enddo
                                               !            ______
-            alpha = sqrt(glsc3(w,w,wt,n))     ! alpha =  \/ (w,w)
+            alpha = sqrt(glsc3(w_NT,w_NT,wt,n))     ! alpha =  \/ (w,w)
             if(alpha.eq.0.) goto 900 !converged
-            l = sqrt(h(j,j)*h(j,j)+alpha*alpha)
+            l = sqrt(h_NT(j,j)*h_NT(j,j)+alpha*alpha)
             temp = 1./l
-            c(j) = h(j,j) * temp
-            s(j) = alpha  * temp
-            h(j,j) = l
-            gamma(j+1) = -s(j) * gamma(j)
-            gamma(j)   =  c(j) * gamma(j)
+            c_NT(j) = h_NT(j,j) * temp
+            s_NT(j) = alpha  * temp
+            h_NT(j,j) = l
+            gamma_NT(j+1) = -s_NT(j) * gamma_NT(j)
+            gamma_NT(j)   =  c_NT(j) * gamma_NT(j)
 
-            rnorm = abs(gamma(j+1))
+            rnorm = abs(gamma_NT(j+1))
 
 c            if ((nid.eq.0).and.(istep.le.2))
 c     $           write (6,66) iter,tolpss,rnorm,istep
@@ -500,41 +661,45 @@ c     $           write (6,66) iter,tolpss,rnorm,istep
             if (j.eq.m) goto 1000 !not converged, restart
 
             temp = 1./alpha
-            call cmult2(v(1,j+1),w,temp,n)   ! v    = w / alpha
+            call cmult2(v_NT(1,j+1),w_NT,temp,n)   ! v    = w / alpha
                                              !  j+1
          enddo
 c        write(6,*) 'end of forming m-th krylov subspace'
   900    iconv = 1
+         ro = rnorm
+         if ((nid.eq.0))  then 
+            write(6,*) istep, iter,'forcing_term',rnorm/tolpss
+         endif   
  1000    continue
-
+c         write(6,*)'restart',iconv
 c        back substitution
 c             -1
 c        c = H   gamma
 c        write(6,*) 'start solving least squre problem'
          do k=j,1,-1
-            temp = gamma(k)
+            temp = gamma_NT(k)
             do i=j,k+1,-1
-               temp = temp - h(k,i)*c(i)
+               temp = temp - h_NT(k,i)*c_NT(i)
             enddo
-            c(k) = temp/h(k,k)
+            c_NT(k) = temp/h_NT(k,k)
          enddo
          !sum up Arnoldi vectors
          do i=1,j
-            call add2s2(x,v(1,i),c(i),n)     ! x = x + c  z
+            call add2s2(x_NT,v_NT(1,i),c_NT(i),n)     ! x = x + c  z
          enddo                               !          i  i
 c     write(6,*) 'end of solving least squre problem'
       enddo
  9000 continue
 
-      call copy(phi,x,n)
+      call copy(phi,x_NT,n)
 
 c     call ortho   (res) ! Orthogonalize wrt null space, if present
 
       if ((nid.eq.0).and. (mod(istep,iocomm).eq.0) ) then
-          write(6,9999) istep,newton_iter,iter,tolpss
+          write(6,9999) istep,iterNT,iter,tolpss
       endif
 
- 9999 format(' ',' ',i9,i6,'  gmres_newton_iteration#',i6,1p1e12.4)
+ 9999 format(' ',' ',i3,i3,'  gmres_newton_iteration#',i6,1p1e12.4)
 
       return
       end
