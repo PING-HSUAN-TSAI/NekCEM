@@ -870,7 +870,7 @@ C
 C
 C     Compute inverse of mesh 2 mass matrix, pff 3/5/92
       CALL INVERS2(BM2INV,BM2,NTOT2)
-      if (nid.eq.0) write(6,*) 'this is bm2:',bm2(2,2,1,1)
+      if (nid_io.eq.0) write(6,*) 'this is bm2:',bm2(2,2,1,1)
 C
       RETURN
       END
@@ -968,6 +968,7 @@ C----------------------------------------------------------------
       INCLUDE 'INPUT'
       INCLUDE 'MASS'
       INCLUDE 'TSTEP'
+      INCLUDE 'PARALLEL'
 C
       VOLVM1=GLSUM(BM1,NX1*NY1*NZ1*NELV)
       VOLVM2=GLSUM(BM2,NX2*NY2*NZ2*NELV)
@@ -983,7 +984,7 @@ C
          ENDIF
  100  CONTINUE
 
-      if (nid.eq.0) write(6,*) 'Vol:',voltm1,volvm1
+      if (nid_io.eq.0) write(6,*) 'Vol:',voltm1,volvm1
 C
       RETURN
       END
@@ -1223,14 +1224,14 @@ C
       DO 300 IX =1,NX1
       DO 300 IY =1,NY1
          WEIGHT =WXM1(IX)*WYM1(IY)
-         AREA(IX,IY,5,IEL) = SQRT(DOT(IX,IY,  1,IEL))*WEIGHT
-         AREA(IX,IY,6,IEL) = SQRT(DOT(IX,IY,NZ1,IEL))*WEIGHT
-         UNX (IX,IY,5,IEL) = -A(IX,IY,  1,IEL)
-         UNX (IX,IY,6,IEL) =  A(IX,IY,NZ1,IEL)
-         UNY (IX,IY,5,IEL) = -B(IX,IY,  1,IEL)
-         UNY (IX,IY,6,IEL) =  B(IX,IY,NZ1,IEL)
-         UNZ (IX,IY,5,IEL) = -C(IX,IY,  1,IEL)
-         UNZ (IX,IY,6,IEL) =  C(IX,IY,NZ1,IEL)
+         AREA(IX,IY,2*LDIM-1,IEL) = SQRT(DOT(IX,IY,  1,IEL))*WEIGHT
+         AREA(IX,IY,2*LDIM,  IEL) = SQRT(DOT(IX,IY,NZ1,IEL))*WEIGHT
+         UNX (IX,IY,2*LDIM-1,IEL) = -A(IX,IY,  1,IEL)
+         UNX (IX,IY,2*LDIM  ,IEL) =  A(IX,IY,NZ1,IEL)
+         UNY (IX,IY,2*LDIM-1,IEL) = -B(IX,IY,  1,IEL)
+         UNY (IX,IY,2*LDIM,  IEL) =  B(IX,IY,NZ1,IEL)
+         UNZ (IX,IY,2*LDIM-1,IEL) = -C(IX,IY,  1,IEL)
+         UNZ (IX,IY,2*LDIM,  IEL) =  C(IX,IY,NZ1,IEL)
   300 CONTINUE
 C
       CALL UNITVEC (UNX,UNY,UNZ,NSRF)
@@ -1462,7 +1463,7 @@ C
          IF (.NOT.IFRZER(IEL)) CALL COPY (IYTM31,ICTM31,NY31)
       ENDIF
 C
-      IF (IF3D) THEN
+      IF (ldim.eq.3) THEN
          CALL MXM (IXM31,NX1,X,NX3,XA,NYZ3)
          DO 100 IZ=1,NZ3
             CALL MXM (XA(1,1,IZ),NX1,IYTM31,NY3,XB(1,1,IZ),NY1)
@@ -1580,7 +1581,7 @@ C
          RETURN
       ENDIF
 C
-      IF (IF3D) THEN
+      IF (ldim.eq.3) THEN
          CALL MXM (IXM21,NX1,X,NX2,XA,NYZ2)
          DO 100 IZ=1,NZ2
             CALL MXM (XA(1,1,IZ),NX1,IYTM21,NY2,XB(1,1,IZ),NY1)
@@ -1653,7 +1654,7 @@ c
          jskip2 = skpdat(6,f)
 C
          i = 0
-         if (if3d) then
+         if (ldim.eq.3) then
             do j2=js2,jf2,jskip2
             do j1=js1,jf1,jskip1
                i = i+1

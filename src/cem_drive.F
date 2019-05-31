@@ -6,25 +6,54 @@ c----------------------------------------------------------------------
       program nekcem
 c----------------------------------------------------------------------
       implicit none
+      integer intracomm
 
-      call cem_init
+      call cem_init (intracomm)
       call cem_solve
       call cem_end
 
       end
 c----------------------------------------------------------------------
-      subroutine cem_init
+      subroutine cem_init(comm_out)
 c----------------------------------------------------------------------
-      implicit none
+c     implicit none
       include 'SIZE'
       include 'INPUT'
+      include 'ZPER'
+      include 'OPCTR'
+      include 'CTIMER'
       include 'RTIMER'
-      include 'EMWAVE'
+      include 'PARALLEL'
 
-      real dclock
+      integer comm_out
+      common /nekmpi/ mid,mp,nekcomm,nekgroup,nekreal
+      integer mid,mp,nekcomm,nekgroup,nekreal
+
+c     real*8 dclock
+      real eps
       integer igeom
 
-      call iniproc
+      ! set word size for REAL
+      eps = 1.0e-12
+      if (1.0 + eps .ne. 1.0) then
+         wdsize = 8
+      else
+         wdsize = 4
+      endif
+      ! set word size for INTEGER
+      isize = 4
+      ! set word size for LOGICAL
+      lsize = 4
+      ! set word size for CHARACTER
+      csize = 1
+
+      call setupcomm()
+      nekcomm  = intracomm
+      comm_out = nekcomm
+
+      nid_io = nid_global
+
+      call iniproc()
       call opcount(1)
 
       call walltime(total_wtime1)
@@ -37,7 +66,8 @@ c----------------------------------------------------------------------
       call files
       call readat
 
-      call setvar
+      call setvar               ! read parameters from rea file
+      call set_logics           ! read parameters from rea file
 
       call setup_topo
 
@@ -56,7 +86,6 @@ c----------------------------------------------------------------------
       call opcount(2)
       call dofcnt
 
-      call set_logics
       if (ifrk) call rk_storage
 
       call walltime(setup_wtime2)
@@ -78,7 +107,7 @@ c----------------------------------------------------------------------
 
 #ifdef MPI
       seconds = MPI_Wtime()
-      if (nid.eq.0) write(6,*) 'MPI walltime: ',seconds
+c     if (nid_io.eq.0) write(6,*) 'MPI walltime: ',seconds
 #endif
 
       return
@@ -104,9 +133,8 @@ c----------------------------------------------------------------------
 c----------------------------------------------------------------------
       implicit none
       include 'SIZE'
+      include 'TOTAL'
       include 'RTIMER'
-      include 'TSTEP'
-      include 'EMWAVE'
 
       real dclock,pretime,endtime
       real dxmin
@@ -149,25 +177,15 @@ c----------------------------------------------------------------------
 c----------------------------------------------------------------------
       implicit none
       include 'SIZE'
+      include 'TOTAL'
 
-      if (nid.eq.0) then
-         write(6,*) ' Preprocessor options:  '
 #ifdef NO_MPI
-         write(6,*) '  MPI off with -DNO_MPI'
-#else
-         write(6,*) '  MPI on: -DNO_MPI not defined'
+      if (nid_io.eq.0) write(6,*) '  MPI off with -DNO_MPI'
 #endif
-#ifdef GPU
-         write(6,*) '  GPU on with -DGPU'
+
 #ifdef _OPENACC
-         write(6,*) '  GPU on with OpenACC'
-#else
-         write(6,*) '  OpenACC off: _OPENACC not defined'
+      if (nid_io.eq.0) write(6,*) '  GPU on with OpenACC'
 #endif
-#else
-         write(6,*) '  GPU off at compile time'
-#endif
-      endif
 
       return
       end
@@ -181,11 +199,6 @@ c----------------------------------------------------------------------
 
       real dclock,t0
       real pretime,endtime
-      real setup_tmax,solve_tmax,total_tmax
-      real setup_tmin,solve_tmin,total_tmin
-      real cpu_t_step,comm_t_step,cpu_p_t,cpu_io_step_pts
-      real gpu_t_step,comm_t_gpu_step
-      real acc_t_step,comm_t_acc_step
       real glsum,glmax,glmin
 
       istep = istep-1
@@ -196,7 +209,7 @@ c     cputime
       solve_time = solve_time2-solve_time1
       total_time = total_time2-total_time1
 
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,66) setup_time2,setup_time1,setup_time
          write(6,67) solve_time2,solve_time1,solve_time
          write(6,68) total_time2,total_time1,total_time
@@ -243,28 +256,28 @@ c     Average total io time over all timesteps.
 c     Average total io time over all timesteps.
       swaptime = glsum(swaptime,1)/np
 
-      if (nid.eq.0) write(6,*)
+      if (nid_io.eq.0) write(6,*)
      $ '==============================================================='
 
-      if (nid.eq.0) write(6,5) cpu_t
-      if (nid.eq.0) write(6,6) comm_t
-      if (nid.eq.0) write(6,7) cpu_t_io
-      if (nid.eq.0) write(6,8) cpu_chk
+      if (nid_io.eq.0) write(6,5) cpu_t
+      if (nid_io.eq.0) write(6,6) comm_t
+      if (nid_io.eq.0) write(6,7) cpu_t_io
+      if (nid_io.eq.0) write(6,8) cpu_chk
 
-      if (nid.eq.0) write(6,9) cpu_t_step
-      if (nid.eq.0) write(6,10) comm_t_step
-      if (nid.eq.0) write(6,11) cpu_io_step
+      if (nid_io.eq.0) write(6,9) cpu_t_step
+      if (nid_io.eq.0) write(6,10) comm_t_step
+      if (nid_io.eq.0) write(6,11) cpu_io_step
 
-      if (nid.eq.0) write(6,12) cpu_p_t
-      if (nid.eq.0) write(6,13) cpu_io_step_pts
-      if (nid.eq.0) write(6,14) swaptime
+      if (nid_io.eq.0) write(6,12) cpu_p_t
+      if (nid_io.eq.0) write(6,13) cpu_io_step_pts
+      if (nid_io.eq.0) write(6,14) swaptime
 
       if (nsteps.ne.0) then
-         if (nid.eq.0) write(6,15) cpu_io_step_pts/cpu_p_t
-         if (nid.eq.0) write(6,16) comm_t/cpu_t*100.0
+         if (nid_io.eq.0) write(6,15) cpu_io_step_pts/cpu_p_t
+         if (nid_io.eq.0) write(6,16) comm_t/cpu_t*100.0
       endif
 
-      if (nid.eq.0) write(6,*)
+      if (nid_io.eq.0) write(6,*)
      $ '==============================================================='
 
     5 format('    total computation         ::',  1pe11.4,' sec ')
@@ -294,7 +307,6 @@ c     Initialize variables
       include 'GEOM'
       include 'WZ'
       include 'TSTEP'
-      include 'EMWAVE'
 
       integer maxhis
 
@@ -341,7 +353,6 @@ c-----------------------------------------------------------------------
       implicit none
       include 'SIZE'
       include 'TOTAL'
-      include 'EMWAVE'
 
       real dxmin
 
@@ -355,7 +366,7 @@ c-----------------------------------------------------------------------
          cfl = param(12)
          dt = cfl*dxmin**2
       else
-         if (nid.eq.0) write(6,*) 'set param(12) with a nonzero value'
+         if (nid_io.eq.0) write(6,*) 'set param(12) with nonzero'
          call exitt(1)
       endif
 #else
@@ -366,14 +377,18 @@ c-----------------------------------------------------------------------
          cfl = param(12)
          dt = cfl*dxmin
       else
-         if (nid.eq.0) write(6,*) 'set param(12) with a nonzero value'
+         if (nid_io.eq.0) write(6,*) 'set param(12) with nonzero '
          call exitt(1)
       endif
 #endif
 
-      if (nid.eq.0) then
-         write(6,*) ' dxmin = ',dxmin
-         write(6,*) 'dt = ',dt, ', cfl = ',cfl
+      if (nid_io.eq.0) then
+         write(6,*) ''
+         write(6,*) 'timestep restrictions :: '
+         write(6,*) '[dxmin] = ',dxmin
+         write(6,*) '[dt] = ',dt
+         write(6,*) '[cfl] = ',cfl
+         write(6,*) ''
       endif
 
       return
@@ -554,29 +569,46 @@ c----------------------------------------------------------------------
 c----------------------------------------------------------------------
       implicit none
       include 'SIZE'
-      include 'EMWAVE'
-      include 'TSTEP'
+      include 'TOTAL'
       include 'CTIMER'
       include 'RTIMER'
-
+      real glsum
       integer ifirst,ilast
 
       if (.not.usesteps) then
-         nsteps = int(fintim/dt)
+         if (ifrestart) then
+            nsteps = int((fintim-restart_time)/dt)
+            if (nid_io.eq.0) then
+               write(6,*) 'fintim',fintim
+               write(6,*) 'restart_time',restart_time
+               write(6,*) 'fintim-restart_time',fintim-restart_time
+            endif
+         else
+            nsteps = int((fintim)/dt)
+            if (nid_io.eq.0) write(6,*) 'fintim',fintim
+         endif
+         if (nid_io.eq.0) write(6,*) 'adjusted nsteps',nsteps
       endif
+
       ifirst = irststep+1
       ilast = nsteps+irststep
+
+      if (nid_io.eq.0) then
+         write(6,*) '============================'
+         write(6,*) '========  Begin Run ========'
+         write(6,*) '============================'
+         write(6,3) ifirst-1,ilast
+      endif
+    3 format(' istep =', i10,'  to',i10)
+
+c     Initial time step info 
+      istep = ifirst-1
+      call userchk
+      call cem_out
+
       if (nsteps.eq.0) call cem_end
 
-      if (nid.eq.0) then
-         write(6,*) '============================'
-         write(6,*) '========  BEGIN RUN ========'
-         write(6,*) '============================'
-         write(6,3) ifirst,ilast
-      endif
-    3 format(' istep=', i6,'    to',i10)
-
-c     start time stepping timers
+c     Start time stepping timers
       cpu_t = 0.0
       acc_t = 0.0
       cpu_chk = 0.0
@@ -590,7 +622,6 @@ c     start time stepping timers
          if (ifrk) call cem_schrod_op_rk
          if (ifeig) call cem_schrod_op_eig
 #elif defined DRIFT
-         if (ifrk) call cem_drift_dg_op_rk
          if (ifbdf) call cem_drift_op_bdf
          if (ifeig) call cem_drift_op_eig
 #elif defined MAXWELL
@@ -602,6 +633,8 @@ c     start time stepping timers
 #endif
          cpu_dtime = dclock()-cpu_dtime
          cpu_t = cpu_t+cpu_dtime
+         cpu_t_step = cpu_t/istep
+         cpu_p_t = glsum(cpu_t_step /npts,1)/np
 
          time = time+dt
 
@@ -614,7 +647,7 @@ c     start time stepping timers
          istep = istep+1
          if (lastep.eq.1) exit
          if (usesteps) then
-            if (istep.gt.nsteps) exit
+            if (istep.gt.ilast) exit
          else
             if (time.ge.fintim) exit
          endif
@@ -661,7 +694,7 @@ c     Transfer array dimensions to common blocks.
       nely = lely
       nelz = lelz
 
-      if (if3d) then
+      if (ldim.eq.3) then
          nxyz = nx1*ny1*nz1
          nxzf = nx1*nz1
          nfaces = ndim*2
@@ -703,9 +736,9 @@ c     Set default logicals
       if (mesh.eq.0) ifhex = .true.
       if (mesh.eq.1) iftet = .true.
 
-      if (nid.eq.0) write(6,*) '  Mesh options: '
-      if (nid.eq.0) write(6,*) '  ifhex = ',ifhex,' (hexahedral)'
-      if (nid.eq.0) write(6,*) '  iftet = ',iftet,' (tetrahedral)'
+      if (nid_io.eq.0) write(6,*) '  Mesh options: '
+      if (nid_io.eq.0) write(6,*) '  ifhex = ',ifhex,' (hexahedral)'
+      if (nid_io.eq.0) write(6,*) '  iftet = ',iftet,' (tetrahedral)'
 
       ifdg = .true.
 
@@ -752,146 +785,63 @@ c     Generate geometry data.
       return
       end
 c----------------------------------------------------------------------
-      subroutine files
+      subroutine files2
 c----------------------------------------------------------------------
-c     Defines machine specific input and output file names.
-      INCLUDE 'SIZE'
-      INCLUDE 'INPUT'
-      INCLUDE 'PARALLEL'
-C
-      CHARACTER*132 NAME
-      CHARACTER*1   SESS1(132),PATH1(132),NAM1(132)
-      EQUIVALENCE  (SESSION,SESS1)
-      EQUIVALENCE  (PATH,PATH1)
-      EQUIVALENCE  (NAME,NAM1)
-      CHARACTER*1  DMP(4),FLD(4),REA(4),HIS(4),SCH(4) ,ORE(4), NRE(4)
-      CHARACTER*1  RE2(4)
-      CHARACTER*4  DMP4  ,FLD4  ,REA4  ,HIS4  ,SCH4   ,ORE4  , NRE4
-      CHARACTER*4  RE24
-      EQUIVALENCE (DMP,DMP4), (FLD,FLD4), (REA,REA4), (HIS,HIS4)
-     $          , (SCH,SCH4), (ORE,ORE4), (NRE,NRE4)
-     $          , (RE2,RE24)
-      DATA DMP4,FLD4,REA4 /'.dmp','.fld','.rea'/
-      DATA HIS4,SCH4      /'.his','.sch'/
-      DATA ORE4,NRE4      /'.ore','.nre'/
-      DATA RE24           /'.re2'       /
-      CHARACTER*78  STRING
-C
-C     Find out the session name:
-C
-      CALL BLANK(SESSION,132)
-      CALL BLANK(PATH   ,132)
+c     Get the name of the `.rea` file and the `.re2` file.
+      implicit none
+      include 'SIZE'
+      include 'INPUT'
+      include 'PARALLEL'
 
-      ierr = 0
+      integer narg,iargc
 
-c...  FIXME: not sure yet if want to read .rea in one node. misun 7/13/10
-      IF(NID.EQ.0) THEN
+      narg = iargc()
+      if (narg.gt.1) then
+         if (nid.eq.0) then
+            write(*,*) 'ERROR: files: too many command line arguments'
+         endif
+         call exitt(1)
+      elseif (narg.eq.0) then
+         if (nid.eq.0) then
+            write(*,*) 'ERROR: files: pass read file as first argument'
+         endif
+         call exitt(1)
+      endif
+      call getarg(1,session)
 
-         OPEN (UNIT=8,FILE='SESSION.NAME',STATUS='OLD')
-         READ(8,10) SESSION
-         READ(8,10) PATH
-         CLOSE(UNIT=8)
- 10      FORMAT(A132)
+      call blank(reafle,132)
+      call blank(re2fle,132)
+      reafle = trim(session)//'.rea'
+      re2fle = trim(session)//'.re2'
 
-         GOTO 23
- 24      ierr = 1
-
-      ENDIF
-  23  call err_chk(ierr,' Cannot open SESSION.NAME!$')
-
-      len = ltrunc(path,132)
-      if(indx1(path1(len),'/',1).lt.1) then
-         call chcopy(path1(len+1),'/',1)
+      if (nid.eq.0) then
+         write(*,*) ' Beginning session: ',trim(reafle)
       endif
 
-      call bcast(SESSION,132*CSIZE)
-      call bcast(PATH,132*CSIZE)
-
-      CALL BLANK(REAFLE,132)
-      CALL BLANK(RE2FLE,132)
-      CALL BLANK(FLDFLE,132)
-      CALL BLANK(HISFLE,132)
-      CALL BLANK(SCHFLE,132)
-      CALL BLANK(DMPFLE,132)
-      CALL BLANK(OREFLE,132)
-      CALL BLANK(NREFLE,132)
-      CALL BLANK(NAME  ,132)
-C
-C     Construct file names containing full path to host:
-C
-      LS=LTRUNC(SESSION,132)
-      LPP=LTRUNC(PATH,132)
-      LSP=LS+LPP
-c
-      call chcopy(nam1(    1),path1,lpp)
-      call chcopy(nam1(lpp+1),sess1,ls )
-      l1 = lpp+ls+1
-      ln = lpp+ls+4
-c
-c
-c .rea file
-      call chcopy(nam1  (l1),rea , 4)
-      call chcopy(reafle    ,nam1,ln)
-c      write(6,*) 'reafile:',reafle
-c
-c .re2 file
-      call chcopy(nam1  (l1),re2 , 4)
-      call chcopy(re2fle    ,nam1,ln)
-c
-c .fld file
-      call chcopy(nam1  (l1),fld , 4)
-      call chcopy(fldfle    ,nam1,ln)
-c
-c .his file
-      call chcopy(nam1  (l1),his , 4)
-      call chcopy(hisfle    ,nam1,ln)
-c
-c .sch file
-      call chcopy(nam1  (l1),sch , 4)
-      call chcopy(schfle    ,nam1,ln)
-c
-c
-c .dmp file
-      call chcopy(nam1  (l1),dmp , 4)
-      call chcopy(dmpfle    ,nam1,ln)
-c
-c .ore file
-      call chcopy(nam1  (l1),ore , 4)
-      call chcopy(orefle    ,nam1,ln)
-c
-c .nre file
-      call chcopy(nam1  (l1),nre , 4)
-      call chcopy(nrefle    ,nam1,ln)
-c
-C     Write the name of the .rea file to the logfile.
-C
-      IF (NID.EQ.0) THEN
-         CALL CHCOPY(STRING,REAFLE,78)
-         WRITE(6,1000) STRING
-         WRITE(6,1001)
- 1000    FORMAT(//,2X,'Beginning session:',/,2X,A78)
- 1001    FORMAT(/,' ')
-      ENDIF
-C
-      RETURN
-      END
+      return
+      end
 c-----------------------------------------------------------------------
       subroutine err_chk(ierr,string)
 C------------------------------------------------------------------------
-      character*1 string(132)
-      character*1 ostring(132)
-      character*10 s10
+      implicit none
       include 'SIZE'
       include 'TOTAL'
       include 'CTIMER'
 
+      character(*) string(132)
+      integer ierr
+
+      character ostring(132)
+      character(10) s10
+      integer iglsum,indx1,k,len
+
       ierr = iglsum(ierr,1)
-      if(ierr.eq.0) return
+      if (ierr.eq.0) return
 
       len = indx1(string,'$',1)
       call blank(ostring,132)
       write(s10,11) ierr
-   11 format(1x,' ierr=',i3)
+ 11   format(1x,' ierr = ',i3)
 
       call chcopy(ostring,string,len-1)
       call chcopy(ostring(len),s10,10)
@@ -1039,7 +989,7 @@ C
       enddo
       epts = glsum(work,1) + .1
       netot=epts
-      if (nid.eq.0) write(6,*) 'dofs:',nvtot,nptot,netot
+      if (nid_io.eq.0) write(6,*) 'dofs:',nvtot,nptot,netot
       return
       end
 c-----------------------------------------------------------------------
@@ -1072,7 +1022,7 @@ c
       else
          call map13_all(xm3,xm1)
          call map13_all(ym3,ym1)
-         if (if3d) call map13_all(zm3,zm1)
+         if (ldim.eq.3) call map13_all(zm3,zm1)
       endif
 c
       call geom1 (xm3,ym3,zm3)
@@ -1104,3 +1054,128 @@ c
       return
       end
 c-----------------------------------------------------------------------
+      subroutine files
+C
+C     Defines machine specific input and output file names.
+C
+      include 'SIZE'
+      include 'INPUT'
+      include 'PARALLEL'
+C
+      CHARACTER*132 NAME
+      CHARACTER*1   SESS1(132),PATH1(132),NAM1(132)
+      EQUIVALENCE  (SESSION,SESS1)
+      EQUIVALENCE  (PATH,PATH1)
+      EQUIVALENCE  (NAME,NAM1)
+      CHARACTER*1  DMP(4),FLD(4),REA(4),HIS(4),SCH(4) ,ORE(4), NRE(4)
+      CHARACTER*1  RE2(4),PAR(4)
+      CHARACTER*4  DMP4  ,FLD4  ,REA4  ,HIS4  ,SCH4   ,ORE4  , NRE4
+      CHARACTER*4  RE24  ,PAR4
+      EQUIVALENCE (DMP,DMP4), (FLD,FLD4), (REA,REA4), (HIS,HIS4)
+     $          , (SCH,SCH4), (ORE,ORE4), (NRE,NRE4)
+     $          , (RE2,RE24), (PAR,PAR4)
+      DATA DMP4,FLD4,REA4 /'.dmp','.fld','.rea'/
+      DATA HIS4,SCH4      /'.his','.sch'/
+      DATA ORE4,NRE4      /'.ore','.nre'/
+      DATA RE24           /'.re2'       /
+      DATA PAR4           /'.par'       /
+      CHARACTER*78  STRING
+C
+C     Find out the session name:
+C
+c      CALL BLANK(SESSION,132)
+c      CALL BLANK(PATH   ,132)
+
+c      ierr = 0
+c      IF(NID.EQ.0) THEN
+c        OPEN (UNIT=8,FILE='SESSION.NAME',STATUS='OLD',ERR=24)
+c        READ(8,10) SESSION
+c        READ(8,10) PATH
+c  10      FORMAT(A132)
+c        CLOSE(UNIT=8)
+c        GOTO 23
+c  24    ierr = 1
+c  23  ENDIF
+c      call err_chk(ierr,' Cannot open SESSION.NAME!$')
+
+      len = ltrunc(path,132)
+      if(indx1(path1(len),'/',1).lt.1) then
+         call chcopy(path1(len+1),'/',1)
+      endif
+
+      CALL BLANK(PARFLE,132)
+      CALL BLANK(REAFLE,132)
+      CALL BLANK(RE2FLE,132)
+      CALL BLANK(FLDFLE,132)
+      CALL BLANK(HISFLE,132)
+      CALL BLANK(SCHFLE,132)
+      CALL BLANK(DMPFLE,132)
+      CALL BLANK(OREFLE,132)
+      CALL BLANK(NREFLE,132)
+      CALL BLANK(NAME  ,132)
+C
+C     Construct file names containing full path to host:
+C
+      LS=LTRUNC(SESSION,132)
+      LPP=LTRUNC(PATH,132)
+      LSP=LS+LPP
+c
+      call chcopy(nam1(    1),path1,lpp)
+      call chcopy(nam1(lpp+1),sess1,ls )
+      l1 = lpp+ls+1
+      ln = lpp+ls+4
+c
+c
+c .rea file
+      call chcopy(nam1  (l1),rea , 4)
+      call chcopy(reafle    ,nam1,ln)
+c      write(6,*) 'reafile:',reafle
+c
+c .par file
+      call chcopy(nam1  (l1),par , 4)
+      call chcopy(parfle    ,nam1,ln)
+c
+c .re2 file
+      call chcopy(nam1  (l1),re2 , 4)
+      call chcopy(re2fle    ,nam1,ln)
+c
+c .fld file
+      call chcopy(nam1  (l1),fld , 4)
+      call chcopy(fldfle    ,nam1,ln)
+c
+c .his file
+      call chcopy(nam1  (l1),his , 4)
+      call chcopy(hisfle    ,nam1,ln)
+c
+c .sch file
+      call chcopy(nam1  (l1),sch , 4)
+      call chcopy(schfle    ,nam1,ln)
+c
+c
+c .dmp file
+      call chcopy(nam1  (l1),dmp , 4)
+      call chcopy(dmpfle    ,nam1,ln)
+c
+c
+c .ore file
+      call chcopy(nam1  (l1),ore , 4)
+      call chcopy(orefle    ,nam1,ln)
+c
+c .nre file
+      call chcopy(nam1  (l1),nre , 4)
+      call chcopy(nrefle    ,nam1,ln)
+c
+C     Write the name of the .rea file to the logfile.
+C
+C      IF (NIO.EQ.0) THEN
+C         CALL CHCOPY(STRING,REAFLE,78)
+C         WRITE(6,1000) STRING
+C         WRITE(6,1001)
+C 1000    FORMAT(//,1X,'Beginning session:',/,2X,A78)
+C 1001    FORMAT(/,' ')
+C      ENDIF
+C
+      RETURN
+
+      END
+C----------------------------------------------------------------------

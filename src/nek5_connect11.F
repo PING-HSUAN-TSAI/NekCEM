@@ -33,7 +33,7 @@ c
       common /ivrtx/ vertex ((2**ldim)*lelt)
       integer        vertex
 
-      if (nid.eq.0) write(6,*) 'setup mesh topology'
+      if (nid_io.eq.0) write(6,*) 'setup mesh topology'
 c
 c     Initialize key arrays for Direct Stiffness SUM.
 c
@@ -117,34 +117,19 @@ c       check if there is a least one fluid element on each processor
      $        (gsh_fld(3),nx1,ny1,nz1,nelv,nelgv,vertex,glo_num)
 #endif
 
-      if(nid.eq.0) then
-        write(6,*) 'done :: setup mesh topology'
-        write(6,*) '.'
-      endif
-
 
       ntotv = nx1*ny1*nz1*nelv
       ntott = nx1*ny1*nz1*nelt
-c
-c     if (ifflow) then
-c        ifield = 1
-         call rone    (vmult,ntotv)
-         call dssum   (vmult,nx1,ny1,nz1)
-         vmltmax = glmax(vmult,ntotv)
-         ivmltmax= vmltmax
-         if (nid.eq.0) write(6,*) ivmltmax,' max multiplicity'
 
-         call invcol1 (vmult,ntotv)
-c     endif
+      call rone    (vmult,ntotv)
+      call dssum   (vmult,nx1,ny1,nz1)
+      vmltmax = glmax(vmult,ntotv)
+      ivmltmax= vmltmax
 
-
-c     if (ifheat) then
-c        ifield = 2
-         call rone    (tmult,ntott)
-         call dssum   (tmult,nx1,ny1,nz1)
-         call invcol1 (tmult,ntott)
-c     endif
-
+      call invcol1 (vmult,ntotv)
+      call rone    (tmult,ntott)
+      call dssum   (tmult,nx1,ny1,nz1)
+      call invcol1 (tmult,ntott)
 
       return
       end
@@ -168,7 +153,7 @@ c     Global-to-local mapping for gs
 
 c     Initialize gather-scatter code
       if     (IFHEX) then
-        if (if3d) then
+        if (ldim.eq.3) then
           nxyz  = nx*ny*nz
           nxzf  = nx*nz
           nfaces= ndim*2
@@ -178,7 +163,7 @@ c     Initialize gather-scatter code
           nfaces= ndim*2
         endif
       elseif (IFTET) then
-        if (if3d) then
+        if (ldim.eq.3) then
           nxyz  = nx*(nx+1)*(nx+2)/6
           nxzf  = nx*(nx+1)/2
           nfaces= ndim+1
@@ -193,12 +178,11 @@ c     Initialize gather-scatter code
       nxzfl= nxzf*nfaces*nelt
 
       call gs_setup(gs_handle,glo_num,npts,nekcomm,np)
-      !write(6,*) 'gs_handle',gs_handle
 
 c     call gs_chkr(glo_num)
 
       t1 = dclock() - t0
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,1) t1,gs_handle,nx,ngv,melg
     1    format('   setup_ds time',1pe11.4,' seconds ',2i3,2i12)
       endif
@@ -213,20 +197,21 @@ c     a new array of global pointers for an nx^ndim set of elements.
 c
       include 'SIZE'
       include 'INPUT'
+      include 'PARALLEL'
 c
       integer*8 glo_num(1),ngv
       integer vertex(1),nx
       logical ifcenter
 
-      if (if3d) then
+      if (ldim.eq.3) then
          call setvert3d(glo_num,ngv,nx,nel,vertex,ifcenter)
       else
          call setvert2d(glo_num,ngv,nx,nel,vertex,ifcenter)
       endif
 
-      if(nid.eq.0) write(6,*) '  call usrsetvert'
+      if (nid_io.eq.0) write(6,*) '  call usrsetvert'
       call usrsetvert(glo_num,nel,nx,nx,nx)
-      if(nid.eq.0) write(6,'(A,/)') '   done :: usrsetvert'
+      if (nid_io.eq.0) write(6,'(A,/)') '   done :: usrsetvert'
 
       return
       end
@@ -501,7 +486,7 @@ c     Assign a number (rank) to each unique face
       m    = 5
       n    = 6*nel
       nmax = 6*lelt*5  ! 5x for crystal router factor of safety
-      if (nid.eq.0) write(6,*) nid,nel,nmax,n,' Fgbtuple',nx
+      if (nid_io.eq.0) write(6,*) nid,nel,nmax,n,' Fgbtuple',nx
       call gbtuple_rank(ftuple,m,n,nmax,cr_h,nid,np,ind)
       do i=1,6*nel
          fnum(i,1) = ftuple(3,i,1)
@@ -651,9 +636,9 @@ c     Quick check on maximum #dofs:
       ngvm = i8glmax(glo_num,m)
       ngvv = ngvv + ngve + ngvs  ! number of unique ids w/o interior
       ngvi = ngvi + ngvv         ! total number of unique ids
-      if (nid.eq.0) write(6,1) nx,ngvv,ngvi,ngv,ngvm
+      if (nid_io.eq.0) write(6,1) nx,ngvv,ngvi,ngv,ngvm
     1 format('   setvert3d:',i4,4i12)
-c
+ 
       return
       end
 c-----------------------------------------------------------------------
@@ -829,9 +814,9 @@ c     Quick check on maximum #dofs:
       ngvm = i8glmax(glo_num,m)
       ngvv = ngvv + ngve         ! number of unique ids w/o interior
       ngvi = ngvi + ngvv         ! total number of unique ids
-      if (nid.eq.0) write(6,1) nx,ngvv,ngvi,ngv,ngvm
+      if (nid_io.eq.0) write(6,1) nx,ngvv,ngvi,ngv,ngvm
     1 format('   setvert2d:',i4,4i12)
-c
+ 
       return
       end
 c-----------------------------------------------------------------------
@@ -896,7 +881,7 @@ c-----------------------------------------------------------------------
 
       if (ifhex) ncrnr = 2**ndim
       if (iftet) ncrnr = ndim + 1
-      if (nid.eq.0) write(6,*) 'get_vert, ncrnr=',ncrnr
+      if (nid_io.eq.0) write(6,*) 'get_vert, ncrnr=',ncrnr
 
       call get_vert_map(vertex, ncrnr, nelgt, '.map',ifgfdm)
 
@@ -979,7 +964,7 @@ c-----------------------------------------------------------------------
 
 c     Distribute and assign partitions
 
-      if (nid.eq.0) write(6,*) 'ifgfdm',ifgfdm
+      if (nid_io.eq.0) write(6,*) 'ifgfdm',ifgfdm
 
       if (.not.ifgfdm) then
       lng = isize*neli
@@ -1000,7 +985,9 @@ C      endif
             if (eg.le.nelgt) nelt=nelt+1
          endif
       enddo
-      if (np.le.64) write(6,33) nid,nelv,nelt,nelgv,nelgt
+      if (np.le.64) then 
+          if (nid_io.eq.0) write(6,33) nid,nelv,nelt,nelgv,nelgt
+      endif
   33  format(5i12,' NELV')
 
 c     now: crystal route vertex by processor id
@@ -1742,7 +1729,7 @@ C
       CALL RZERO(XYZ,24*NELT)
 
       call rzero(xyz,24*nelt)
-      if (if3d) then
+      if (ldim.eq.3) then
          do ie=1,nelt
          do j=1,8
             ivtx = indx(j)
@@ -1805,7 +1792,7 @@ C
 C
       IFCSTT=.TRUE.
 
-      IF (.NOT.IF3D) THEN
+      IF (ldim.ne.3) THEN
       DO 1000 IE=1,NELT
 C
 C        CRSS2D(A,B,O) = (A-O) X (B-O)
@@ -1873,7 +1860,7 @@ C
          IF (NID.EQ.0) WRITE(6,2003) NELGT
          call exitt(1)
       ELSE
-         IF (NID.EQ.0) WRITE(6,2002) NELGT
+         IF (NID_IO.EQ.0) WRITE(6,2002) NELGT
       ENDIF
 C
  2001 FORMAT(//,'  Elemental geometry not right-handed, ABORTING'
@@ -2209,21 +2196,21 @@ c-----------------------------------------------------------------------
 c     Global-to-local mapping for gs
       mx = nx+2
 
-      if (nid.eq.0) write(6,*) 'setup_dgds2:: init'
+      if (nid_io.eq.0) write(6,*) 'setup_dgds2:: init'
 
       t00= dclock()
       call set_vert2(glo_num1,ngv,mx,nel,vertex,.false.) !2nd call
-      if (nid.eq.0)  write(6,2)  dclock()-t00
+      if (nid_io.eq.0)  write(6,2)  dclock()-t00
     2 format(' set_vert time::',1pe11.4,' seconds ')
 
       ntot = (nx1+2)*(ny1+2)*nelt
-      if (if3d) ntot = (nx1+2)*(ny1+2)*(nz1+2)*nelt
+      if (ldim.eq.3) ntot = (nx1+2)*(ny1+2)*(nz1+2)*nelt
 c
       mz0 = 1
       mz1 = 1
 
-      if (if3d) mz0 = 0
-      if (if3d) mz1 = nz1+1
+      if (ldim.eq.3) mz0 = 0
+      if (ldim.eq.3) mz1 = nz1+1
 
 c     call icopy8          (glo_num1,glo_num,ntot)
       call iface_vert_int8 (glo_num,glo_num1,mz0,mz1,nelt)
@@ -2233,10 +2220,10 @@ c     call icopy8          (glo_num1,glo_num,ntot)
 
       t00= dclock()
       call gs_setup(gsh_face,glo_num,ntot,nekcomm,np)
-      if (nid.eq.0)  write(6,3)  dclock()-t00
+      if (nid_io.eq.0)  write(6,3)  dclock()-t00
     3 format('   gs_setup time::',1pe11.4,' seconds ')
 
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,5) dclock()-t0,gsh_face,nx,ngv,melg
     5    format(' setup_dsdg2 time::',1pe11.4,' seconds ',2i3,2i12)
       endif
@@ -2675,21 +2662,21 @@ C     For GPU
 c     Global-to-local mapping for gs
       mx = nx+2
 
-      if (nid.eq.0) write(6,*) 'setup_dgds2:: init'
+      if (nid_io.eq.0) write(6,*) 'setup_dgds2:: init'
 
       t00= dclock()
       call set_vert2(glo_num1,ngv,mx,nel,vertex,.false.) !2nd call
-      if (nid.eq.0)  write(6,2)  dclock()-t00
+      if (nid_io.eq.0)  write(6,2)  dclock()-t00
     2 format(' set_vert time::',1pe11.4,' seconds ')
 
       ntot = (nx1+2)*(ny1+2)*nelt
-      if (if3d) ntot = (nx1+2)*(ny1+2)*(nz1+2)*nelt
+      if (ldim.eq.3) ntot = (nx1+2)*(ny1+2)*(nz1+2)*nelt
 c
       mz0 = 1
       mz1 = 1
 
-      if (if3d) mz0 = 0
-      if (if3d) mz1 = nz1+1
+      if (ldim.eq.3) mz0 = 0
+      if (ldim.eq.3) mz1 = nz1+1
 
 c     call icopy8          (glo_num1,glo_num,ntot)
       call iface_vert_int8 (glo_num,glo_num1,mz0,mz1,nelt)
@@ -2700,7 +2687,7 @@ c     call icopy8          (glo_num1,glo_num,ntot)
       t00= dclock()
 c      call gs_setup(gsh_face,glo_num,ntot,nekcomm,np)
 
-      if (nid.eq.0)  write(6,3)  dclock()-t00
+      if (nid_io.eq.0)  write(6,3)  dclock()-t00
     3 format('   gs_setup time::',1pe11.4,' seconds ')
 
 
@@ -2800,4 +2787,3 @@ c
       end
 
 #endif
-

@@ -8,10 +8,12 @@ c     sane.
       include 'TOTAL'
       include 'EMWAVE'
       include 'SCHROD'
+      include 'PML'
 
       ifdg = .true.             ! spectral element DG method: default
       ifse = .false.            ! spectral element method
       ifexct = .false.          ! drift-diffusion solver
+      ifsteric = .false.        ! drift-diffusion w/ steric term
       iffilter = .false.        ! filter
       ific = .false.            ! initial condition
       ifrestart = .false.       ! restart output file
@@ -34,6 +36,7 @@ c     sane.
       ifrk22 = .false.          ! RK 2-stage 2nd order
       ifbdf = .false.           ! All BDF methods
       ifbdf1 = .false.          ! BDF1 time stepping
+      ifbdf1r = .false.         ! BDF1 time stepping with Richardson extrapolation
       ifbdf2 = .false.          ! BDF2 time stepping
       ifexp = .false.           ! exponential time stepping
       ifeig = .false.           ! eigenvalue solver
@@ -61,6 +64,7 @@ c     sane.
       if (param(17).eq.45) ifrk45 = .true.
       if (param(17).eq.22) ifrk22 = .true.
       if (param(17).eq.-1) ifbdf1 = .true.
+      if (param(17).eq.-11) ifbdf1r = .true.
       if (param(17).eq.-2) ifbdf2 = .true.
       if (param(17).lt.0) ifbdf = .true.
 
@@ -76,13 +80,18 @@ c     sane.
       if (param(23).eq.1) iffdm = .true.
       if (param(25).eq.1) ifgfdmdd = .true.
 
+c     Set PML parameters for the Maxwell solver
+      pmlthick = int(param(77))
+      pmlorder = param(78)
+      pmlreferr = param(79)
+
       if (ifrk22.or.ifrk45) then
          ifrk= .true.
       else
          ifrk = .false.
       endif
 
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,*) 'iffilter    ',iffilter
          write(6,*) 'ifpoisson   ',ifpoisson
          write(6,*) 'ifgmres     ',ifgmres
@@ -114,21 +123,21 @@ c     sane.
 
 c     Do we have a valid imode?
       imode = 0
-      if (if3d) then
+      if (ldim.eq.3) then
          imode = 3
          return
       endif
       if (iftm) imode = 2
       if (ifte) imode = 1
       if (imode.eq.0) then
-         if (nid.eq.0) write(6,*) 'param(4): TE or TM not defined'
+         if (nid_io.eq.0) write(6,*) 'param(4): TE or TM not defined'
          call exitt(1)
       endif
 c     Do we have a valid timestepping method?
       if (ifeig.or.ifexp.or.ifrk.or.ifbdf) then
-         if (nid.eq.0) write(6,*) 'param(17): defined as ', param(17)
+         if (nid_io.eq.0) write(6,*) 'param(17): defined as ', param(17)
       else
-         if (nid.eq.0) write(6,*) 'param(17): not defined', param(17)
+         if (nid_io.eq.0) write(6,*) 'param(17): not defined', param(17)
          call exitt(1)
       endif
 

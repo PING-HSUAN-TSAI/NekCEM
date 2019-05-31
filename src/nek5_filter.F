@@ -5,9 +5,13 @@ c     filter vx,vy,vz, and p by simple interpolation
 c
       include 'SIZE'
       include 'TOTAL'
+#if defined MAXWELL
       include 'EMWAVE'
-c
-c
+#elif defined DRIFT
+      include 'DRIFT'  
+      include 'POISSON'
+#endif 
+ 
 c     These are the dimensions that we interpolate onto for v and p:
       parameter(lxv=lx1-1)
       parameter(lxp=lx2-1)
@@ -35,6 +39,7 @@ c
       real wk1  (lx1,lx1,lx1,lelt)
       real wk2  (lx1,lx1,lx1)
       real zgmv(lx1),wgtv(lx1),zgmp(lx1),wgtp(lx1)
+      integer ic
 
 
       character*18 sfmt
@@ -46,23 +51,40 @@ c
       imax = nid
       imax = iglmax(imax,1)
       jmax = iglmax(imax,1)
+
       if (icalld.eq.0) then
          icalld = 1
-         ncut = param(85) ! 1 or 2
-         call build_new_filter(intv,zgm1,nx1,ncut,wght,nid)
+         ncut = 2 ! 1 or 2 modes, param if necessary
+         call build_new_filter(intv,zgm1,nx1,ncut,wght,nid_io)
+         if (nid_io.eq.0) write(6,18) ncut,wght
       endif
 
-      call filterq(ex,intv,nx1,nz1,wk1,wk2,intt,if3d,exmx)
-      call filterq(ey,intv,nx1,nz1,wk1,wk2,intt,if3d,eymx)
-      call filterq(ez,intv,nx1,nz1,wk1,wk2,intt,if3d,ezmx)
+  18  format(' [filt cutoff] ',i3,'  weight',f7.4)
 
-      call filterq(hx,intv,nx1,nz1,wk1,wk2,intt,if3d,hxmx)
-      call filterq(hy,intv,nx1,nz1,wk1,wk2,intt,if3d,hymx)
-      call filterq(hz,intv,nx1,nz1,wk1,wk2,intt,if3d,hzmx)
+#ifdef _OPENACC
+      if (nid.eq.0) write(6,*) 'No support openacc for filter'
+      call exitt(1)
+#endif
 
-c     write(6,1) istep,time,exmx,eymx,ezmx,hxmx,hymx,hzmx
-c   1 format(i8,1p7e10.3,' filt')
+#if defined MAXWELL
 
+      call filterq(en(1,1),intv,nx1,nz1,wk1,wk2,intt,if3d,exmx)
+      call filterq(en(1,2),intv,nx1,nz1,wk1,wk2,intt,if3d,eymx)
+      call filterq(en(1,3),intv,nx1,nz1,wk1,wk2,intt,if3d,ezmx)
+
+      call filterq(hn(1,1),intv,nx1,nz1,wk1,wk2,intt,if3d,hxmx)
+      call filterq(hn(1,2),intv,nx1,nz1,wk1,wk2,intt,if3d,hymx)
+      call filterq(hn(1,3),intv,nx1,nz1,wk1,wk2,intt,if3d,hzmx)
+
+c     if (nid.eq.0) write(6,1) istep,time,exmx,eymx,ezmx,hxmx,hymx,hzmx
+
+#elif defined DRIFT
+      do ic=1,lcdim
+        call filterq(cn(1,ic),intv,nx1,nz1,wk1,wk2,intt,if3d,cnmx)
+c       if (nid.eq.0) write(6,1) istep,time,cnmx
+      enddo
+#endif
+    1 format(i8,1p7e10.3,' filt')
 
       return
       end
@@ -170,6 +192,7 @@ c
 c
 c      Here, nx = number of points
 c
+
       real intv(nx,nx),zpts(nx)
 c
       parameter (lm=40)
@@ -220,8 +243,8 @@ c
       enddo
       np1 = nx+1
       if (nid.eq.0) then
-         write(6,6) ' filt amp',(pht (k),k=1,nx*nx,np1)
-         write(6,6) ' filt trn',(diag(k),k=1,nx*nx,np1)
+         write(6,6) ' [filt amp] ',(pht (k),k=1,nx*nx,np1)
+         write(6,6) ' [filt trn] ',(diag(k),k=1,nx*nx,np1)
    6     format(a8,16f7.4,6(/,8x,16f7.4))
       endif
 c

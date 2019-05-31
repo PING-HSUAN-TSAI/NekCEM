@@ -41,7 +41,7 @@ c-----------------------------------------------------------------------
       call gs_op_fields(gsh_face,srflx_tmp2(1,6),nxzfl,1,1,1,0)
       t2 = dclock()-t0
 
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,*) 'nid=0: gs_op_fields: single vector',t1,'sec'
          write(6,*) 'nid=0: gs_op_fields: multi  vector',t2,'sec'
       endif
@@ -52,7 +52,7 @@ c-----------------------------------------------------------------------
       call bcast(maxcomm,isize)
       icomm_option = maxcomm
 
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          if (icomm_option.eq.0)
      $        write(6,*) 'gs_op_fields: chose single vector'
          if (icomm_option.eq.1)
@@ -76,7 +76,7 @@ c---------------------------------------------------------------------
 
 c     These to be deleted all when IFHEX/IFTET are done
 
-      if (nid.eq.0) write(6,*) 'start: initialize geom and fields'
+c     if (nid_io.eq.0) write(6,*) 'start: initialize geom and fields'
 c     Coordinates, geometry, field variables
       call rzero (xmn,npts)
       call rzero (ymn,npts)
@@ -160,7 +160,7 @@ c     pml related arrays
          unzm (i)= unz (i,1,1,1)
          aream(i)= area(i,1,1,1)
       enddo
-      if (nid.eq.0) write(6,*) 'done: initialization geom/fields'
+      if (nid_io.eq.0) write(6,*) 'done: initialization geom/fields'
 
       call cem_set_fc_ptr       ! global numbering index on face
       if (ifpml) then
@@ -185,7 +185,7 @@ c     Inverse mass matrix including material constants
       call invcol1 (ebm1,npts)
       call invcol1 (hbm1,npts)
       call invers2 (jacmi,jacm1,npts)
-      if (nid.eq.0) write(6,*) 'done: inverse mass matrix'
+      if (nid_io.eq.0) write(6,*) 'done: inverse mass matrix'
 
       return
       end
@@ -199,14 +199,13 @@ c---------------------------------------------------------------------
 
       if (ifrestart) then
          call restart_swap
-         call userchk
-         call cem_out
       else
-         call userini(time,HN(1,1),HN(1,2),HN(1,3),
-     $                     EN(1,1),EN(1,2),EN(1,3))
-         call userchk
-         call cem_out
+         call userini(time, hn(1,1),hn(1,2),hn(1,3),
+     $                      en(1,1),en(1,2),en(1,3))
       endif
+
+      call userinc
+     $    (time,fhn(1,1),fhn(1,2),fhn(1,3),fen(1,1),fen(1,2),fen(1,3))
 
       return
       end
@@ -240,10 +239,13 @@ c     Check permittivity/permeability setting
       permea_max = glmax(permeability,npts)
       permea_min = glmin(permeability,npts)
 
-      if (nid.eq.0) write(6,*) 'permit_max=',permit_max
-      if (nid.eq.0) write(6,*) 'permit_min=',permit_min
-      if (nid.eq.0) write(6,*) 'permea_max=',permea_max
-      if (nid.eq.0) write(6,*) 'permea_min=',permea_min
+      if (nid_io.eq.0) write(6,*) ''
+      if (nid_io.eq.0) write(6,*) 'parameters in solver ::'
+      if (nid_io.eq.0) write(6,*) '[permit_max]=',permit_max
+      if (nid_io.eq.0) write(6,*) '[permit_min]=',permit_min
+      if (nid_io.eq.0) write(6,*) '[permea_max]=',permea_max
+      if (nid_io.eq.0) write(6,*) '[permea_min]=',permea_min
+      if (nid_io.eq.0) write(6,*) ''
 
       if ((permit_max.le.0).or.(permit_min.le.0)) then
          if (nid.eq.0) write(6,*) 'define permit in uservp (.usr)'
@@ -268,7 +270,7 @@ c-----------------------------------------------------------------------
       character CB*3
       real const
 
-      if (nid.eq.0) write(6,*) 'start: cem_maxwell_materials'
+      if (nid_io.eq.0) write(6,*) 'start: cem_maxwell_materials'
 
 c     Compute impedence/conductance.
       do i = 1,npts
@@ -317,7 +319,7 @@ c     Z_0 = 0.5*Z_0
       call cmult (Z_0,const,nxzfl)
       call cmult (Y_0,const,nxzfl)
 
-      if (nid.eq.0) write(6,*) 'done: cem_maxwell_materials'
+      if (nid_io.eq.0) write(6,*) 'done: cem_maxwell_materials'
 
       return
       end
@@ -336,6 +338,8 @@ c     Time step the PDE using a 5-stage 4th-order RK method.
          call cem_maxwell_op
          call rk_maxwell_ab(rkstep)
       enddo
+
+      if (iffilter) call q_filter(0.01)
 
       return
       end
@@ -367,7 +371,6 @@ c.... this pairs with nonblocking_4
       if (param(88).eq.1) then
 
          gs_aggress_nonblock= 1
-         if (nid.eq.0) write(6,*) 'gs_aggress_nonblock:ON, param(88)=1'
 
          if (icalld.eq.0) then
             call cem_maxwell_restrict_to_face
@@ -382,7 +385,6 @@ c.... this pairs with nonblocking_4
       else
 
          gs_aggress_nonblock= 0
-         if (nid.eq.0) write(6,*) 'gs_aggress_nonblock:OFF, param(88)=0'
 
       endif
 
@@ -516,7 +518,7 @@ c-----------------------------------------------------------------------
 c...  sacrify 2D optimization for simplicity::
       if (ifdealias) then
 
-         if     (imode.eq.3) then !IF3D
+         if     (imode.eq.3) then ! 3D
 
             call maxwell_wght_dcurl
      $        (resEN(1,1),resEN(1,2),resEN(1,3),HN(1,1),HN(1,2),HN(1,3))
@@ -526,14 +528,14 @@ c...  sacrify 2D optimization for simplicity::
             call chsign (resHN(1,2),npts)
             call chsign (resHN(1,3),npts)
 
-         elseif (imode.eq.2) then !IFTM
+         elseif (imode.eq.2) then ! TM
 
             call maxwell_wght_dcurl
      $        (resHN(1,1),resHN(1,2),resEN(1,3),HN(1,1),HN(1,2),EN(1,3))
             call chsign (resHN(1,1),npts)
             call chsign (resHN(1,2),npts)
 
-         elseif (imode.eq.1) then !IFTE
+         elseif (imode.eq.1) then ! TE
             call maxwell_wght_dcurl
      $        (resEN(1,1),resEN(1,2),resHN(1,3),EN(1,1),EN(1,2),HN(1,3))
             call chsign (resHN(1,3),npts)
@@ -544,7 +546,7 @@ c...  sacrify 2D optimization for simplicity::
 
 #ifdef _OPENACC
 
-         if     (imode.eq.3) then !IF3D
+         if     (imode.eq.3) then ! 3D
 
             call maxwell_wght_curl_acc
      $        (resEN(1,1),resEN(1,2),resEN(1,3),HN(1,1),HN(1,2),HN(1,3))
@@ -554,14 +556,14 @@ c...  sacrify 2D optimization for simplicity::
             call chsign (resHN(1,2),npts)
             call chsign (resHN(1,3),npts)
 
-         elseif (imode.eq.2) then !IFTM
+         elseif (imode.eq.2) then ! TM
 
             call maxwell_wght_curl_acc
      $        (resHN(1,1),resHN(1,2),resEN(1,3),HN(1,1),HN(1,2),EN(1,3))
             call chsign (resHN(1,1),npts)
             call chsign (resHN(1,2),npts)
 
-         elseif (imode.eq.1) then !IFTE
+         elseif (imode.eq.1) then ! TE
             call maxwell_wght_curl_acc
      $        (resEN(1,1),resEN(1,2),resHN(1,3),EN(1,1),EN(1,2),HN(1,3))
             call chsign (resHN(1,3),npts)
@@ -569,7 +571,7 @@ c...  sacrify 2D optimization for simplicity::
          endif
 #else
 
-         if     (imode.eq.3) then !IF3D
+         if     (imode.eq.3) then ! 3D
 
             call maxwell_wght_curl
      $        (resEN(1,1),resEN(1,2),resEN(1,3),HN(1,1),HN(1,2),HN(1,3))
@@ -579,14 +581,14 @@ c...  sacrify 2D optimization for simplicity::
             call chsign (resHN(1,2),npts)
             call chsign (resHN(1,3),npts)
 
-         elseif (imode.eq.2) then !IFTM
+         elseif (imode.eq.2) then ! TM
 
             call maxwell_wght_curl
      $        (resHN(1,1),resHN(1,2),resEN(1,3),HN(1,1),HN(1,2),EN(1,3))
             call chsign (resHN(1,1),npts)
             call chsign (resHN(1,2),npts)
 
-         elseif (imode.eq.1) then !IFTE
+         elseif (imode.eq.1) then ! TE
             call maxwell_wght_curl
      $        (resEN(1,1),resEN(1,2),resHN(1,3),EN(1,1),EN(1,2),HN(1,3))
             call chsign (resHN(1,3),npts)
@@ -761,7 +763,7 @@ c-----------------------------------------------------------------------
 
       real srflx(6*2*ldim*lx1*lz1*lelt)
 
-      if (if3d) then
+      if (ldim.eq.3) then
          call cem_maxwell_flux3d(srflx)
       else
          call cem_maxwell_flux2d(srflx)
@@ -779,7 +781,7 @@ c-----------------------------------------------------------------------
 
       real     srflx(6*2*ldim*lx1*lz1*lelt)
 
-      if (if3d) then
+      if (ldim.eq.3) then
          call cem_maxwell_flux3d_nonblocking (srflx)
       else
          call cem_maxwell_flux2d_nonblocking (srflx)
@@ -797,7 +799,7 @@ c-----------------------------------------------------------------------
 
       real srflx(6*2*ldim*lx1*lz1*lelt)
 
-      if (if3d) then
+      if (ldim.eq.3) then
          call cem_maxwell_flux3d_nonblocking_4 (srflx)
       else
          call cem_maxwell_flux2d_nonblocking (srflx)
@@ -1449,7 +1451,7 @@ c     weighted curl:   (w1,w2,w3) = curl x (u1,u2,u3)
 
       nn    = nx1-1
 
-      if (if3d) then
+      if (ldim.eq.3) then
 
          do e=1,nelt
 
@@ -1538,14 +1540,14 @@ c...         sgn1/sgn2 is assigned "-" or "+" when calling; sgn1/sgn2=-1/1 if TE
 c-----------------------------------------------------------------------
       subroutine maxwell_wght_dcurl(w1,w2,w3,u1,u2,u3)
 c-----------------------------------------------------------------------
+c     Combined weighted (w1,w2,w3) = B*curl(u1,u2,u3) on a finer mesh
+c     with dealiasing.
       implicit none
       include 'SIZE'
       include 'TOTAL'
       include 'EMWAVE'
       include 'DEALIAS'
-c     Combined weighted:   (w1,w2,w3) = B*curl(u1,u2,u3) on a finer mesh
-c     with dealiasing
-c
+
       real     w0(1)
       real     u1(1),u2(1),u3(1)
       real     w1(1),w2(1),w3(1)
@@ -1573,10 +1575,10 @@ c
       common /ddtmp2/ ju1(ldd),ju2(ldd),ju3(ldd)
       real            ju1,ju2,ju3
 
-      common /ddtmp3/ wd0(ldd),wd1(ldd),wd2(ldd),wd3(ldd)
-      real            wd0,wd1,wd2,wd3
+      common /ddtmp3/ wd1(ldd),wd2(ldd),wd3(ldd)
+      real            wd1,wd2,wd3
       common /ddtmp4/ dxmd(lxd,lxd),dxtmd(lxd,lxd)
-      common /ddtmp5/ w3md(lxd**ldim),wgld(lxd),zmd(lxd)
+      common /ddtmp5/ w3md(ldd),wgld(lxd),zmd(lxd)
       real            dxmd,dxtmd,w3md,wgld,zmd
 
       integer icalld, e, l, i, j, k, j1, jd, nxyd, nxy, nn, mm, mx
@@ -1596,11 +1598,11 @@ c
 
          call zwgll(zmd,wgld,md)
 
-         if (if3d) then
+         if (ldim.eq.3) then
             l = 0
-            do k=1,md
-               do j=1,md
-                  do i=1,md
+            do k=1,lxd
+               do j=1,lyd
+                  do i=1,lzd
                      l=l+1
                      w3md(l) = wgld(i)*wgld(j)*wgld(k)
                   enddo
@@ -1608,8 +1610,8 @@ c
             enddo
          else
             l = 0
-            do j=1,md
-               do i=1,md
+            do j=1,lxd
+               do i=1,lyd
                   l=l+1
                   w3md(l) = wgld(i)*wgld(j)
                enddo
@@ -1646,7 +1648,7 @@ c     This will need to be dynamic if we have p-refinement
          call intp_rstd (ju2,u2(j1),mx,md,if3d, 0)
          call intp_rstd (ju3,u3(j1),mx,md,if3d, 0)
 
-         if (if3d) then
+         if (ldim.eq.3) then
 
             call local_grad3 (ud1r,ud1s,ud1t,ju1,mm,1,dxmd,dxtmd)
             call local_grad3 (ud2r,ud2s,ud2t,ju2,mm,1,dxmd,dxtmd)
@@ -1753,7 +1755,7 @@ c     weighted curl:   (w1,w2,w3) = curl x (u1,u2,u3)
 
       nn    = nx1-1
 
-      if (if3d) then
+      if (ldim.eq.3) then
          do e = 1,nelt
             j = nxyz*(e-1)
 
@@ -1839,7 +1841,7 @@ c-----------------------------------------------------------------------
 
 #ifdef _OPENACC
 !$ACC DATA PRESENT(resHN,resEN,hbm1,ebm1)
-      if     (imode.eq.3) then !IF3D
+      if     (imode.eq.3) then ! 3D
 !$ACC PARALLEL LOOP
          do i=1,npts
             resHN(i,1)=resHN(i,1)*hbm1(i)
@@ -1850,7 +1852,7 @@ c-----------------------------------------------------------------------
             resEN(i,3)=resEN(i,3)*ebm1(i)
          enddo
 !$ACC END PARALLEL LOOP
-      elseif (imode.eq.2) then  !IFTM
+      elseif (imode.eq.2) then  ! TM
 !$ACC PARALLEL LOOP
          do i=1,npts
             resHN(i,1)=reshN(i,1)*hbm1(i)
@@ -1858,7 +1860,7 @@ c-----------------------------------------------------------------------
             resEN(i,3)=reseN(i,3)*ebm1(i)
          enddo
 !$ACC END PARALLEL LOOP
-      elseif (imode.eq.1) then  !IFTE
+      elseif (imode.eq.1) then  ! TE
 !$ACC PARALLEL LOOP
          do i=1,npts
             resEN(i,1)=resEN(i,1)*ebm1(i)
@@ -1873,7 +1875,7 @@ c-----------------------------------------------------------------------
 
 #else
 
-      if     (imode.eq.3) then !IF3D
+      if     (imode.eq.3) then ! 3D
          do i=1,npts
             resHN(i,1)=resHN(i,1)*hbm1(i)
             resHN(i,2)=resHN(i,2)*hbm1(i)
@@ -1882,13 +1884,13 @@ c-----------------------------------------------------------------------
             resEN(i,2)=resEN(i,2)*ebm1(i)
             resEN(i,3)=resEN(i,3)*ebm1(i)
          enddo
-      elseif (imode.eq.2) then  !IFTM
+      elseif (imode.eq.2) then  ! TM
          do i=1,npts
             resHN(i,1)=reshN(i,1)*hbm1(i)
             resHN(i,2)=reshN(i,2)*hbm1(i)
             resEN(i,3)=reseN(i,3)*ebm1(i)
          enddo
-      elseif (imode.eq.1) then  !IFTE
+      elseif (imode.eq.1) then  ! TE
          do i=1,npts
             resEN(i,1)=resEN(i,1)*ebm1(i)
             resEN(i,2)=resEN(i,2)*ebm1(i)
@@ -1956,7 +1958,7 @@ c     kHX=rk4a(i)*kHX
 
 #ifdef TIMER
       if     (istep.le.10.or.mod(istep,iocomm).eq.0) then
-         if (nid.eq.0) then
+         if (nid_io.eq.0) then
             write(6,*) 'rk_maxwell_ab                (sec)::',stime0
          endif
       endif
@@ -1972,7 +1974,7 @@ C----------------------------------------------------------------------
       include 'TOTAL'
       include 'EMWAVE'
 
-      if (nid.eq.0) write(6,*) 'compute eigenvalues'
+      if (nid_io.eq.0) write(6,*) 'compute eigenvalues'
 
       call cem_maxwell_eig        !call schrod_eig_arpack
       call cem_end
@@ -2016,13 +2018,12 @@ C----------------------------------------------------------------------
          call exitt(1)
       endif
 
-      if (nid.eq.0) write(6,*) 'start cem_maxwell_eig',imode
+      if (nid_io.eq.0) write(6,*) 'start cem_maxwell_eig',imode
       nn  = npts*nfield
       nn2 = nn*nn
       call rzero(res,nn2)
 
-c     if3d
-      if (imode.eq.3) then
+      if (imode.eq.3) then      ! 3D
 
          k1 = 0
          do jj= 1,nfield
@@ -2118,7 +2119,7 @@ c     if3d
 
       endif
 
-      if (nid.eq.0) write(6,*) 'obtain spatial operator'
+      if (nid_io.eq.0) write(6,*) 'obtain spatial operator'
 
       do i=1,nn2
          if (abs(res(i)).lt.1.e-13) res(i)=0.0
@@ -2132,7 +2133,7 @@ c     if3d
       close(50)
 
 
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,*) '                                      '
          write(6,*) 'IFEIG T :: computing eigenvalues      '
          write(6,*) '                                      '
@@ -2483,7 +2484,7 @@ c
 
       nn    = nx1-1
 c
-      if (if3d) then
+      if (ldim.eq.3) then
 
          do e=1,nelt
 
@@ -2537,7 +2538,6 @@ c-----------------------------------------------------------------------
       implicit none
 
       include 'SIZE'
-      include 'WZ'
       logical if3d
       real u1r(lx1,ly1,lz1,lelt)
       real u1s(lx1,ly1,lz1,lelt)
@@ -2650,7 +2650,7 @@ c     weighted curl:   (w1,w2,w3) = curl x (u1,u2,u3)
 !$ACC&     PRESENT(u1r,u1s,u1t,u2r,u2s,u2t,u3r,u3s,u3t)
 
 c     call test_global_curl_grad3_acc
-      if (if3d) then
+      if (ldim.eq.3) then
          call global_curl_grad3_acc
      $        (u1r,u1s,u1t,u2r,u2s,u2t,u3r,u3s,u3t,u1,u2,u3,dxm1)
       else

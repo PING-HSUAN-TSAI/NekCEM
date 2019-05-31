@@ -835,7 +835,7 @@ C
          gtime = dclock()
          call copy(tmp1,u,npts2)
          call rzero(tmp2,npts2)
-         if (if3d) then
+         if (ldim.eq.3) then
             call cem_acoustic_bd_dtn3d(tmp2,tmp1)
             call add2s2  (au,tmp2,1.,npts2)                ! Aur = Aur + ui
             gtime=dclock()-gtime
@@ -850,413 +850,6 @@ c        call cem_acoustic_bd_dtn3(tmp2,tmp1)
 
       return
       end
-C------------------------------------------------------------------
-      subroutine axhelm3(au,u,helm1,helm2,imsh,isd)
-C------------------------------------------------------------------
-C
-C     Compute the (Helmholtz) matrix-vector product,
-C     AU = helm1*[A]u + helm2*[B]u, for NEL elements.
-C
-C------------------------------------------------------------------
-      implicit none
-      INCLUDE 'SIZE'
-      INCLUDE 'WZ'
-      INCLUDE 'DXYZ'
-      INCLUDE 'GEOM'
-      INCLUDE 'MASS'
-      INCLUDE 'INPUT'
-      INCLUDE 'PARALLEL'
-      INCLUDE 'CTIMER'
-      include 'EMWAVE'
-C
-      REAL           AU    (LX1,LY1,LZ1,LELT)
-     $ ,             U     (LX1,LY1,LZ1,LELT)
-     $ ,             HELM1 (LX1,LY1,LZ1,LELT)
-     $ ,             HELM2 (LX1,LY1,LZ1,LELT)
-      real           term1,term2,dnekclock
-      integer isd,imsh
-C
-#ifdef _OPENACC
-      call axhelm3_acc(au,u,helm1,helm2,imsh,isd)
-#else
-      call axhelm3_mpi(au,u,helm1,helm2,imsh,isd)
-#endif
-
-      return
-      END
-#ifdef _OPENACC
-C------------------------------------------------------------------
-      subroutine axhelm3_acc(au,u,helm1,helm2,imsh,isd)
-C------------------------------------------------------------------
-C
-C     Compute the (Helmholtz) matrix-vector product,
-C     AU = helm1*[A]u + helm2*[B]u, for NEL elements.
-C
-C------------------------------------------------------------------
-      implicit none
-      INCLUDE 'SIZE'
-      INCLUDE 'WZ'
-      INCLUDE 'DXYZ'
-      INCLUDE 'GEOM'
-      INCLUDE 'MASS'
-      INCLUDE 'INPUT'
-      INCLUDE 'PARALLEL'
-      INCLUDE 'CTIMER'
-      include 'EMWAVE'
-C
-      COMMON /FASTAX/ WDDX(LX1,LX1),WDDYT(LY1,LY1),WDDZT(LZ1,LZ1)
-      COMMON /FASTMD/ IFDFRM(LELT), IFFAST(LELT), IFH2, IFSOLV
-      REAL WDDX,WDDYT,WDDZT
-      INTEGER NEL,NXY,NYZ,NXZ,NTOT
-
-      LOGICAL IFDFRM, IFFAST, IFH2, IFSOLV
-C
-      REAL           AU    (LX1,LY1,LZ1,LELT)
-     $ ,             U     (LX1,LY1,LZ1,LELT)
-     $ ,             HELM1 (LX1,LY1,LZ1,LELT)
-     $ ,             HELM2 (LX1,LY1,LZ1,LELT)
-
-      COMMON /CTMPL1/ DUDR  (LX1,LY1,LZ1,LELT)
-     $ ,             DUDS  (LX1,LY1,LZ1,LELT)
-     $ ,             DUDT  (LX1,LY1,LZ1,LELT)
-     $ ,             TMP1  (LX1,LY1,LZ1,LELT)
-     $ ,             TMP2  (LX1,LY1,LZ1,LELT)
-     $ ,             TMP3  (LX1,LY1,LZ1,LELT)
-
-      real            TMP1, TMP2,TMP3
-      real            DUDR, DUDS,DUDT
-
-      REAL           TM1   (LX1,LY1,LZ1,LELT)
-      REAL           TM2   (LX1,LY1,LZ1,LELT)
-      REAL           TM3   (LX1,LY1,LZ1,LELT)
-      REAL           DUAX  (LX1)
-      REAL           YSM1  (LX1)
-      real           term1,term2,dnekclock
-      integer  iel,ie,iz,isd,imsh,j,i
-      EQUIVALENCE    (DUDR,TM1),(DUDS,TM2),(DUDT,TM3)
-C
-      NEL = NELT
-      NXY = NX1*NY1
-      NYZ = NY1*NZ1
-      NXZ = NX1*NZ1
-      NTOT= NX1*NY1*NZ1*NEL
-C
-#ifndef NOTIMER
-      if (icalld.eq.0) taxhm=0.0
-      icalld=icalld+1
-      naxhm=icalld
-      etime1=dnekclock()
-#endif
-
-c     IF (.NOT.IFSOLV) CALL SETFAST(HELM1,HELM2,IMESH)
-!$ACC DATA PCOPYIN(U(NX1,NY1,NZ1,NELT),HELM1(NX1,NY1,NZ1,NELT))
-!$ACC&     PCOPYIN(HELM2(NX1,NY1,NZ1,NELT))
-!$ACC&     PCOPYOUT(AU(NX1,NY1,NZ1,NELT))
-!$ACC&     PCREATE(DUDR(NX1,NY1,NZ1,NELT),DUDS(NX1,NY1,NZ1,NELT))
-!$ACC&     PCREATE(DUDT(NX1,NY1,NZ1,NELT),TMP1(NX1,NY1,NZ1,NELT))
-!$ACC&     PCREATE(TMP2(NX1,NY1,NZ1,NELT),TMP3(NX1,NY1,NZ1,NELT))
-!$ACC&     PCOPYIN(G1M1(NX1,NY1,NZ1,NELT),G2M1(NX1,NY1,NZ1,NELT))
-!$ACC&     PCOPYIN(G3M1(NX1,NY1,NZ1,NELT),G4M1(NX1,NY1,NZ1,NELT))
-!$ACC&     PCOPYIN(G5M1(NX1,NY1,NZ1,NELT),G6M1(NX1,NY1,NZ1,NELT))
-
-      CALL RZERO (AU,NTOT)
-
-      IF (NDIM.EQ.2) THEN       ! 2-d case ...............
-
-c          General case, speed-up for undeformed elements
-c
-         CALL GLO_GRAD(DXM1,U,DUDR,DUDS,DUDT)
-         CALL COL3 (TMP1,DUDR,G1M1,NTOT)
-         CALL COL3 (TMP2,DUDS,G2M1,NTOT)
-
-c     IF (IFDFRM(IEL)) THEN
-c     write(6,*) 'DDDDDD',iel,IFDFRM(IEL)
-         CALL ADDCOL3 (TMP1,DUDS,G4M1,NTOT)
-         CALL ADDCOL3 (TMP2,DUDR,G4M1,NTOT)
-c     ENDIF
-
-         CALL COL2 (TMP1,HELM1,NTOT)
-         CALL COL2 (TMP2,HELM1,NTOT)
-         CALL GLO_2GRAD(DXTM1,TMP1,TMP2,TMP3,TM1,TM2,TM3)
-         CALL ADD2 (AU,TM1,NTOT) !FIXME
-         CALL ADD2 (AU,TM2,NTOT) !FIXME
-         !CALL ADD2R (AU,TM1,NTOT)
-         !CALL ADD2R (AU,TM2,NTOT)
-
-c          ENDIF
-         ELSE
-
-c          3-d case ...............
-
-c     General case, speed-up for undeformed elements
-
-           CALL GLO_GRAD(DXM1,U,DUDR,DUDS,DUDT)
-           CALL COL3    (TMP1,DUDR,G1M1,NTOT)
-           CALL COL3    (TMP2,DUDS,G2M1,NTOT)
-           CALL COL3    (TMP3,DUDT,G3M1,NTOT)
-
-           CALL ADDCOL3 (TMP1,DUDS,G4M1,NTOT)
-           CALL ADDCOL3 (TMP1,DUDT,G5M1,NTOT)
-           CALL ADDCOL3 (TMP2,DUDR,G4M1,NTOT)
-           CALL ADDCOL3 (TMP2,DUDT,G6M1,NTOT)
-           CALL ADDCOL3 (TMP3,DUDR,G5M1,NTOT)
-           CALL ADDCOL3 (TMP3,DUDS,G6M1,NTOT)
-
-           CALL COL2 (TMP1,HELM1,NTOT)
-           CALL COL2 (TMP2,HELM1,NTOT)
-           CALL COL2 (TMP3,HELM1,NTOT)
-
-           CALL GLO_2GRAD(DXTM1,TMP1,TMP2,TMP3,TM1,TM2,TM3)
-
-           CALL ADD2 (AU,TM1,NTOT)
-           CALL ADD2 (AU,TM2,NTOT)
-           CALL ADD2 (AU,TM3,NTOT)
-
-        ENDIF
-
-
-      CALL ADDCOL4 (AU,HELM2,BM1,U,NTOT)
-!$ACC END DATA
-
-C     If axisymmetric, add a diagonal term in the radial direction (ISD=2)
-C
-      IF (IFAXIS.AND.(ISD.EQ.2)) THEN
-         DO 200 IEL=1,NEL
-C
-            IF (IFRZER(IEL)) THEN
-               CALL MXM(U  (1,1,1,IEL),NX1,DATM1,NY1,DUAX,1)
-               CALL MXM(YM1(1,1,1,IEL),NX1,DATM1,NY1,YSM1,1)
-            ENDIF
-C
-            DO 190 J=1,NY1
-            DO 190 I=1,NX1
-               IF (YM1(I,J,1,IEL).NE.0.) THEN
-                  TERM1 = BM1(I,J,1,IEL)*U(I,J,1,IEL)/YM1(I,J,1,IEL)**2
-                  IF (IFRZER(IEL)) THEN
-                     TERM2 =  WXM1(I)*WAM1(1)*DAM1(1,J)*DUAX(I)
-     $                       *JACM1(I,1,1,IEL)/YSM1(I)
-                  ELSE
-                     TERM2 = 0.
-                  ENDIF
-                  AU(I,J,1,IEL) = AU(I,J,1,IEL)
-     $                          + HELM1(I,J,1,IEL)*(TERM1+TERM2)
-               ENDIF
-  190       CONTINUE
-  200    CONTINUE
-      ENDIF
-c      if (nid.eq.0) write(6,*) 'done: axhelm3'
-C
-#ifndef NOTIMER
-      taxhm=taxhm+(dnekclock()-etime1)
-#endif
-      return
-      END
-#endif
-C------------------------------------------------------------------
-      subroutine axhelm3_mpi(au,u,helm1,helm2,imsh,isd)
-C------------------------------------------------------------------
-C
-C     Compute the (Helmholtz) matrix-vector product,
-C     AU = helm1*[A]u + helm2*[B]u, for NEL elements.
-C
-C------------------------------------------------------------------
-      implicit none
-      INCLUDE 'SIZE'
-      INCLUDE 'WZ'
-      INCLUDE 'DXYZ'
-      INCLUDE 'GEOM'
-      INCLUDE 'MASS'
-      INCLUDE 'INPUT'
-      INCLUDE 'PARALLEL'
-      INCLUDE 'CTIMER'
-      include 'EMWAVE'
-C
-      COMMON /FASTAX/ WDDX(LX1,LX1),WDDYT(LY1,LY1),WDDZT(LZ1,LZ1)
-      COMMON /FASTMD/ IFDFRM(LELT), IFFAST(LELT), IFH2, IFSOLV
-      REAL WDDX,WDDYT,WDDZT
-      INTEGER NEL,NXY,NYZ,NXZ,NTOT
-
-      LOGICAL IFDFRM, IFFAST, IFH2, IFSOLV
-C
-      REAL           AU    (LX1,LY1,LZ1,1)
-     $ ,             U     (LX1,LY1,LZ1,1)
-     $ ,             HELM1 (LX1,LY1,LZ1,1)
-     $ ,             HELM2 (LX1,LY1,LZ1,1)
-
-      COMMON /CTMP1/ DUDR  (LX1,LY1,LZ1)
-     $ ,             DUDS  (LX1,LY1,LZ1)
-     $ ,             DUDT  (LX1,LY1,LZ1)
-     $ ,             TMP1  (LX1,LY1,LZ1)
-     $ ,             TMP2  (LX1,LY1,LZ1)
-     $ ,             TMP3  (LX1,LY1,LZ1)
-
-      real            TMP1, TMP2,TMP3
-      real            DUDR, DUDS,DUDT
-
-      REAL           TM1   (LX1,LY1,LZ1)
-      REAL           TM2   (LX1,LY1,LZ1)
-      REAL           TM3   (LX1,LY1,LZ1)
-      REAL           DUAX  (LX1)
-      REAL           YSM1  (LX1)
-      real           term1,term2,dnekclock
-      integer  iel,ie,iz,isd,imsh,j,i
-      EQUIVALENCE    (DUDR,TM1),(DUDS,TM2),(DUDT,TM3)
-C
-      NEL = NELT
-      NXY = NX1*NY1
-      NYZ = NY1*NZ1
-      NXZ = NX1*NZ1
-      NTOT= NX1*NY1*NZ1*NEL
-C
-#ifndef NOTIMER
-      if (icalld.eq.0) taxhm=0.0
-      icalld=icalld+1
-      naxhm=icalld
-      etime1=dnekclock()
-#endif
-
-c     IF (.NOT.IFSOLV) CALL SETFAST(HELM1,HELM2,IMESH)
-
-      CALL RZERO (AU,NTOT)
-
-      DO 100 IEL=1,NEL
-        ie=iel
-
-c       IF (IFAXIS) CALL SETAXDY ( IFRZER(IEL) )
-
-        IF (NDIM.EQ.2) THEN ! 2-d case ...............
-
-c          IF (IFFAST(IEL)) THEN
-c          Fast 2-d mode: constant properties and undeformed element
-c
-c          H1 = HELM1(1,1,1,IEL)
-c          CALL MXM   (WDDX,NX1,U(1,1,1,IEL),NX1,TM1,NYZ)
-c          CALL MXM   (U(1,1,1,IEL),NX1,WDDYT,NY1,TM2,NY1)
-c          CALL COL2  (TM1,G4M1(1,1,1,IEL),NXYZ)
-c          CALL COL2  (TM2,G5M1(1,1,1,IEL),NXYZ)
-c          CALL ADD3  (AU(1,1,1,IEL),TM1,TM2,NXYZ)
-c          CALL CMULT (AU(1,1,1,IEL),H1,NXYZ)
-c
-c          ELSE
-c
-c          General case, speed-up for undeformed elements
-c
-           CALL MXM  (DXM1,NX1,U(1,1,1,IEL),NX1,DUDR,NYZ)
-           CALL MXM  (U(1,1,1,IEL),NX1,DYTM1,NY1,DUDS,NY1)
-           CALL COL3 (TMP1,DUDR,G1M1(1,1,1,IEL),NXYZ)
-           CALL COL3 (TMP2,DUDS,G2M1(1,1,1,IEL),NXYZ)
-
-c           IF (IFDFRM(IEL)) THEN
-c               write(6,*) 'DDDDDD',iel,IFDFRM(IEL)
-              CALL ADDCOL3 (TMP1,DUDS,G4M1(1,1,1,IEL),NXYZ)
-              CALL ADDCOL3 (TMP2,DUDR,G4M1(1,1,1,IEL),NXYZ)
-c           ENDIF
-
-           CALL COL2 (TMP1,HELM1(1,1,1,IEL),NXYZ)
-           CALL COL2 (TMP2,HELM1(1,1,1,IEL),NXYZ)
-           CALL MXM  (DXTM1,NX1,TMP1,NX1,TM1,NYZ)
-           CALL MXM  (TMP2,NX1,DYM1,NY1,TM2,NY1)
-           CALL ADD2 (AU(1,1,1,IEL),TM1,NXYZ)
-           CALL ADD2 (AU(1,1,1,IEL),TM2,NXYZ)
-
-c          ENDIF
-
-        ELSE
-
-c          3-d case ...............
-c          IF (IFFAST(IEL)) THEN
-
-c          Fast 3-d mode: constant properties and undeformed element
-
-c          H1 = HELM1(1,1,1,IEL)
-c          CALL MXM   (WDDX,NX1,U(1,1,1,IEL),NX1,TM1,NYZ)
-c          DO 5 IZ=1,NZ1
-c          CALL MXM   (U(1,1,IZ,IEL),NX1,WDDYT,NY1,TM2(1,1,IZ),NY1)
-c5         CONTINUE
-c          CALL MXM   (U(1,1,1,IEL),NXY,WDDZT,NZ1,TM3,NZ1)
-c          CALL COL2  (TM1,G4M1(1,1,1,IEL),NXYZ)
-c          CALL COL2  (TM2,G5M1(1,1,1,IEL),NXYZ)
-c          CALL COL2  (TM3,G6M1(1,1,1,IEL),NXYZ)
-c          CALL ADD3  (AU(1,1,1,IEL),TM1,TM2,NXYZ)
-c          CALL ADD2  (AU(1,1,1,IEL),TM3,NXYZ)
-c          CALL CMULT (AU(1,1,1,IEL),H1,NXYZ)
-c
-c          ELSE
-
-c          General case, speed-up for undeformed elements
-
-           CALL MXM(DXM1,NX1,U(1,1,1,IEL),NX1,DUDR,NYZ)
-           DO 10 IZ=1,NZ1
-              CALL MXM(U(1,1,IZ,IEL),NX1,DYTM1,NY1,DUDS(1,1,IZ),NY1)
-   10      CONTINUE
-           CALL MXM     (U(1,1,1,IEL),NXY,DZTM1,NZ1,DUDT,NZ1)
-           CALL COL3    (TMP1,DUDR,G1M1(1,1,1,IEL),NXYZ)
-           CALL COL3    (TMP2,DUDS,G2M1(1,1,1,IEL),NXYZ)
-           CALL COL3    (TMP3,DUDT,G3M1(1,1,1,IEL),NXYZ)
-
-c          IF (IFDFRM(IEL)) THEN
-              CALL ADDCOL3 (TMP1,DUDS,G4M1(1,1,1,IEL),NXYZ)
-              CALL ADDCOL3 (TMP1,DUDT,G5M1(1,1,1,IEL),NXYZ)
-              CALL ADDCOL3 (TMP2,DUDR,G4M1(1,1,1,IEL),NXYZ)
-              CALL ADDCOL3 (TMP2,DUDT,G6M1(1,1,1,IEL),NXYZ)
-              CALL ADDCOL3 (TMP3,DUDR,G5M1(1,1,1,IEL),NXYZ)
-              CALL ADDCOL3 (TMP3,DUDS,G6M1(1,1,1,IEL),NXYZ)
-c          ENDIF
-
-           CALL COL2 (TMP1,HELM1(1,1,1,IEL),NXYZ)
-           CALL COL2 (TMP2,HELM1(1,1,1,IEL),NXYZ)
-           CALL COL2 (TMP3,HELM1(1,1,1,IEL),NXYZ)
-           CALL MXM  (DXTM1,NX1,TMP1,NX1,TM1,NYZ)
-           DO 20 IZ=1,NZ1
-              CALL MXM(TMP2(1,1,IZ),NX1,DYM1,NY1,TM2(1,1,IZ),NY1)
-   20      CONTINUE
-           CALL MXM  (TMP3,NXY,DZM1,NZ1,TM3,NZ1)
-           CALL ADD2 (AU(1,1,1,IEL),TM1,NXYZ)
-           CALL ADD2 (AU(1,1,1,IEL),TM2,NXYZ)
-           CALL ADD2 (AU(1,1,1,IEL),TM3,NXYZ)
-
-c          ENDIF
-
-        ENDIF
-
- 100  CONTINUE
-
-      CALL ADDCOL4 (AU,HELM2,BM1,U,NTOT)
-
-C     If axisymmetric, add a diagonal term in the radial direction (ISD=2)
-C
-      IF (IFAXIS.AND.(ISD.EQ.2)) THEN
-         DO 200 IEL=1,NEL
-C
-            IF (IFRZER(IEL)) THEN
-               CALL MXM(U  (1,1,1,IEL),NX1,DATM1,NY1,DUAX,1)
-               CALL MXM(YM1(1,1,1,IEL),NX1,DATM1,NY1,YSM1,1)
-            ENDIF
-C
-            DO 190 J=1,NY1
-            DO 190 I=1,NX1
-               IF (YM1(I,J,1,IEL).NE.0.) THEN
-                  TERM1 = BM1(I,J,1,IEL)*U(I,J,1,IEL)/YM1(I,J,1,IEL)**2
-                  IF (IFRZER(IEL)) THEN
-                     TERM2 =  WXM1(I)*WAM1(1)*DAM1(1,J)*DUAX(I)
-     $                       *JACM1(I,1,1,IEL)/YSM1(I)
-                  ELSE
-                     TERM2 = 0.
-                  ENDIF
-                  AU(I,J,1,IEL) = AU(I,J,1,IEL)
-     $                          + HELM1(I,J,1,IEL)*(TERM1+TERM2)
-               ENDIF
-  190       CONTINUE
-  200    CONTINUE
-      ENDIF
-c      if (nid.eq.0) write(6,*) 'done: axhelm3'
-C
-#ifndef NOTIMER
-      taxhm=taxhm+(dnekclock()-etime1)
-#endif
-      return
-      END
-
 c-----------------------------------------------------------------------
 c... this is purely neumann condition with CB='N  '
       subroutine cem_acoustic_bd_nmn(bdint,bdfunc)
@@ -2069,7 +1662,7 @@ c      call col2    (rhs,mask0,npts)
       endif
       enddo
 
-      if (if3d)then
+      if (ldim.eq.3) then
           ssum=ssum/4.0
       else
           ssum=ssum/(2.0*pi)!Fixme here is case sensitive
@@ -2140,7 +1733,7 @@ c...  dtn_dir(f,e)= 6 if same direction with
 c...  assign dtn directions into dtn_dir from 0 to 6:
       mx=nx1/2  ! get rough midpoint index: enough
       mz=1      ! default if not 3d
-      if (if3d) mz=nz1/2
+      if (ldim.eq.3) mz=nz1/2
 
       tol=1.e-10 !
 
@@ -2579,7 +2172,7 @@ c     Weighted grad:  w1=du1/dx, w2=du1/dy, w3=du1/dz
       include 'SIZE'
       include 'TOTAL'
 c
-      integer mode, imode
+      integer mode        
       real    w1(1),w2(1),w3(1),u1(1)
       real    u1rw,u1sw,u1tw
       integer e,k,i,j,ntot,nn
@@ -2589,7 +2182,7 @@ c
 c
       nn    = nx1-1
 
-      if (if3d) then
+      if (ldim.eq.3) then
 
          do e=1,nelt
          j = nxyz*(e-1)
@@ -2670,7 +2263,7 @@ c
 c
       nn    = nx1-1
 
-      if (if3d) then
+      if (ldim.eq.3) then
 
          do e=1,nelt
          j = nxyz*(e-1)
@@ -3930,7 +3523,7 @@ c=======================================================================
 
       pn=lfp
 
-      if (if3d) then
+      if (ldim.eq.3) then
          if (idir.eq.1 .or. idir.eq.2)then
          do p1=-pn,pn
             kk=(p1+pn)*(pn*2+1)
@@ -4036,7 +3629,7 @@ c=======================================================================
       call rzero(length2,ldim)
       call rzero(tmph,lelt*ldim)
       call rzero(tmpd,lelt*ldim)
-      if (if3d) then
+      if (ldim.eq.3) then
                 tmax      = glmax(xm1,npts)
                 tmin      = glmin(xm1,npts)
                 length (1)= tmax-tmin
@@ -4527,7 +4120,7 @@ c     Weighted u \cdot grad v:  w=u1dv/dx+u2dv/dy+u3dv/dz
       include 'SIZE'
       include 'TOTAL'
 c
-      integer mode, imode
+      integer mode        
       real    u1(1),u2(1),u3(1),w(1)
       real    u1rx(lx1*ly1*lz1)
       real    u1sx(lx1*ly1*lz1)
@@ -4545,7 +4138,7 @@ c
 
       nn    = nx1-1
       call rzero(w,npts)
-      if (if3d) then
+      if (ldim.eq.3) then
 
          do e=1,nelt
          j = nxyz*(e-1)
@@ -5133,8 +4726,7 @@ c......
                tmp1        = 2*p*pi/length
                z_alphap(ip)= tmp1
                z_betap (ip)= z_kw(idir)**2-(z_alpha0(e)+z_alphap(ip))**2
-               z_betap (ip)= sqrt(real(z_betap(ip))**2
-     $              +imag(z_betap(ip))**2)
+               z_betap (ip)= csqrt(z_betap(ip))
             enddo
             enddo
             do p =-pn,pn

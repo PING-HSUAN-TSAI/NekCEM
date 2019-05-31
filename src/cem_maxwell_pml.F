@@ -7,13 +7,6 @@ c-----------------------------------------------------------------------
       include 'EMWAVE'
       include 'PML'
 
-      pmlthick = int(param(77))
-      pmlorder = param(78)
-c     How much of the incident signal is permitted to be reflected
-c     by the PML. See the term R(0) in formula (7.57) of the Taflove
-c     book.
-      pmlreferr = param(79)
-
       if ((pmlthick.lt.1).or.(pmlthick.gt.10)) then
         write (*,*) 'Something is wrong with your pmlthick setting'
         write (*,*) 'in your .rea file. It needs to be between one'
@@ -172,7 +165,7 @@ c     include 'PML'
           bc_here = cbc(face, elt, 1)
 
           if  (bc_here.eq.'PML' .or. bc_here.eq.'pml') then
-            if (if3d) then
+            if (ldim.eq.3) then
               do ix=1,lx1-2
               do iz=1,lz1-2
                 faceary(ix+iz*lx1+1, face, elt) = 1
@@ -324,7 +317,7 @@ c-----------------------------------------------------------------------
 
       ! determine the indicative point index (see above)
 
-      if (if3d) then
+      if (ldim.eq.3) then
         ind_ptidx = 1+1*lx1+1
       else
         ind_ptidx = 2
@@ -426,7 +419,7 @@ c-----------------------------------------------------------------------
       call gop(outer(3), gop_work, 'm  ', 1)
       call gop(outer(4), gop_work, 'M  ', 1)
 
-      if (if3d) then
+      if (ldim.eq.3) then
         call gop(inner(2*ldim-1), gop_work, 'M  ', 1)
         call gop(inner(2*ldim), gop_work, 'm  ', 1)
 
@@ -475,7 +468,11 @@ c-----------------------------------------------------------------------
       maxpml = l                !local total pml elts
       maxpmlg= iglsum(maxpml,1) !global total pml elts
 
-      if (nid.eq.0) write(6,*) ' PML #elts (local/global)',maxpml,maxpmlg
+      if (nid_io.eq.0) then
+          write(6,*) ''
+          write(6,*) 'PML #elts (local/global)',maxpml,maxpmlg
+          write(6,*) ''
+      endif
 
       do e=1,maxpml
          ie = pmlptr(e)

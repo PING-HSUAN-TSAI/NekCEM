@@ -1,58 +1,126 @@
 # NekCEM
 
-## Building and running
+NekCEM is a discontinous-Galerkin, spectral-element solver for
+Maxwell's equations and the drift-diffusion equations written in
+Fortran and C.  It runs efficiently in parallel on a wide variety
+of systems, from laptops to the supercomputers at the Argonne
+Leadership Computing Facility (ALCF) and the Oak Ridge Leadership
+Computing Facility (OLCF). Its core is based on the computational
+fluid dynamics code [Nek5000][Nek5000].
 
-Suppose that NekCEM has been installed into the directory `NEK` and
-you have the following example.
+## Installing
+
+### Dependencies
+
+To run simulations with NekCEM you will need the following
+things.
+
+- An MPI implementation.
+- Python 2.7 or higher (including all versions of Python 3).
+- BLAS and Lapack.
+
+Some notes on the dependencies:
+
+- To keep things simple, make sure the compiler wrappers
+  `mpif77` (or `mpifort`) and `mpicc` are on your path. This
+  isn't strictly necessary, but without them you will have to do
+  more work when compiling simulations.
+- Python is only used in the build process.
+- The system version of Python on some ALCF and OLCF systems is
+  2.6; use `softenv` or `modules` to switch to a more recent
+  version. Run `soft add +python` on a `softenv` system and
+  `module load python` on a modules system.
+- Again to keep things simple, make sure you can link to BLAS and
+  Lapack using `-lblas` and `-llapack`.
+
+### Standard install
+
+To install NekCEM run
+
+```
+git clone https://github.com/NekCEM/NekCEM
+cd NekCEM
+sudo make install
+```
+
+The command `make install` does a couple of things.
+
+- It copies `NekCEM/src` and `NekCEM/bin` to `/usr/local`.
+- It symlinks some scripts to `/usr/local/bin`.
+
+Note that installing to `/usr/local` is simply the default option; the
+install directory can be controlled in the standard way using the
+variables `DESTDIR`, `prefix`, and `bindir`.
+
+### Development install
+
+If you want to help develop the NekCEM source code, first fork the
+NekCEM repo on Github. Then do
+
+```
+git clone https://github.com/<github-username>/NekCEM
+cd NekCEM
+git remote add upstream https://github.com/NekCEM/NekCEM
+sudo make install_inplace
+```
+
+The command `sudo make install_inplace` only symlinks scripts to
+`/usr/local/bin`, allowing a developer to edit the source in
+their local clone while still having the necessary scripts on
+their path.
+
+## Running simulations with NekCEM
+
+Setting up a simulation with NekCEM requires creating four files.
+
+- A user file. This is a Fortran file which contains various
+  subroutines used to control the solvers. Its file extension should
+  be `usr`.
+- A size file. This file contains compile-time parameters. It should
+  be called `SIZE`.
+- A read file. This file contains parameters which are read at
+  runtime. Its file extension should be `rea`.
+- A map file. This file contains the mapping between processors and
+  elements.  Its file extension should be `map`, and it must have the
+  same stem as the read file.
+
+A typical NekCEM simulation will be set up like this
 
 ```
 example
-|- example.usr
-|- example.rea
-|- example.box
-\- SIZE
+├── readfile.map
+├── readfile.rea
+├── userfile.usr
+└── SIZE
 ```
 
-### Using `makenek`
+To build and run the code do the following from the `example`
+directory.
 
-To build this example:
+```
+configurenek <solver> userfile
+make
+mpirun -np <number-of-processors> ./nekcem readfile &> log
+```
 
-- copy the script `$NEK/bin/makenek` to `example`
-- set the script variable `NEK` to the location of your NekCEM
-  installation
-- set `APP` to the application you are targeting; should be one of
-  `maxwell`, `drift`, or `schrod`
-- set `FC` and `CC` to your desired Fortran and C compilers
-- run `./makenek example`
+Let's break down what's going on.
 
-This should create an executable `nekcem` in `example`. By default
-`makenek` will try to determine a sensible set of `FFLAGS` and
-`CFLAGS`, but you can override it by setting `FFLAGS` and `CFLAGS`.
-Similarly it will try to determine reasonable values for `LD` and
-`LDFLAGS`. You can also add additional flags to the set of flags it
-chooses by setting `EXTRAFFLAGS`, `EXTRACFLAGS`, and `EXTRALDFLAGS`.
+- In the first step `configurenek` creates a makefile. The `<solver>`
+  option determines which equations the application is targeting; it
+  should be one of `maxwell`, `drift`, or `shrod`.
+- In the second step the makefile builds the code in the normal way;
+  it produces an executable `nekcem`.
+- In the third step the code is run in the normal way for MPI
+  applications.
 
-To run the example run `$NEK/bin/nek example $NP`, where `NP` is the
-number of processors you want to use for the run.
-
-### Using `configurenek`
-
-The script `makenek` is a front-end for the script `configurenek`,
-which can also be called directly. To build with `configurenek`:
-
-- run `$NEK/bin/configurenek app example [options]` in the `example`
-  directory. As with `makenek`, the argument `app` is the application
-  being targeted. There are many possible options; run with the `-h`
-  flag for a full list. The most basic options are `--FC` and `--CC`,
-  which you can use to set the Fortran and C compilers being
-  used. Alternatively, if you are on a known machine such as `cetus`,
-  then you can just pass `--arch cetus`, which will correctly set the
-  compilers and flags for you. See `$NEK/bin/arch.json` for a list of
-  known machines.
-- Running `configurenek` creates a makefile in `example` which you can
-  use to compile the example.
+The third step can be replaced with `nek readfile
+<number-of-processors>`. On a typical system this will do the exact
+same thing as `mpirun`, but on ALCF and OLCF machines it will also
+queue your job correctly.
 
 ### Running the Tests
 
-To run the tests, run `$NEK/bin/runtests [options]`. For a complete
-list of the options use the `-h` flag.
+The tests can be run with `bin/runtests [options]`. For a complete
+list of options use the `-h` flag.
+
+[Nek5000]: https://github.com/Nek5000/Nek5000

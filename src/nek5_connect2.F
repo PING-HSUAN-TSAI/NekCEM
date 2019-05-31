@@ -326,22 +326,22 @@ C
       END
 c-----------------------------------------------------------------------
       subroutine readat
-C
-C     Read in data from preprocessor input file (.rea)
-C
+c
+c     Read in data from preprocessor input file (.rea)
+c
       INCLUDE 'SIZE'
       INCLUDE 'INPUT'
       INCLUDE 'PARALLEL'
       INCLUDE 'ZPER'
-
-      common /nekmpi/ nid_,np_,nekcomm,nekgroup,nekreal
 
       logical ifbswap, ifre2
       character*132 string
       real*8 etime_tmp
       integer idum(3*numsts+3)
 
-C     Test timer accuracy
+      ierr = 0
+
+c     Test timer accuracy
       edif = 0.0
       do i = 1,10
          e1 = dclock()
@@ -349,16 +349,20 @@ C     Test timer accuracy
          edif = edif + e2-e1
       enddo
       edif = edif/10.
-      if (nid.eq.0) write(6,'(A,1pE15.7,A,/)')
+      if (nid_io.eq.0) write(6,'(A,1pE15.7,A,/)')
      &              ' timer accuracy: ', edif, ' sec'
 
       etime_tmp = dclock()
 
-C     Open .rea file
+c     Open .rea file
+
       if (nid.eq.0) then
-        write(6,*) 'read .rea file'
-        OPEN (UNIT=9,FILE=REAFLE,STATUS='OLD')
+        if (nid_io.eq.0) write(6,'(A,A)') ' reading ', reafle
+        OPEN (UNIT=9,FILE=REAFLE,STATUS='OLD',iostat=ierr)
       endif
+      call bcast(ierr,isize)
+      if (ierr .gt. 0) call exitti('Cannot open rea file!$',ierr,1)
+
 
 C     Read parameters and logical flags
       call rdparam2
@@ -387,7 +391,7 @@ C     Read mesh info
       call ifoption (ifre2)
 
       if (ifre2) call open_bin_file(ifbswap) ! rank0 will open and read
-      if (nid.eq.0) then
+      if (nid_io.eq.0) then
          write(6,12) 'nelgt/nelgv/lelt:',nelgt,nelgv,lelt
          write(6,12) 'lx1  /lx2  /lx3 :',lx1,lx2,lx3
  12      format(1X,A,4I9,/,/)
@@ -396,7 +400,7 @@ C     Read mesh info
       call chk_nel              ! make certain sufficient array sizes
       if (.not.ifgtp) call mapelpr ! read .map file, est. gllnid, etc.
 
-      if (nid.eq.0) write(6,*) 'gfdm/ifgtp/ifre2',ifgfdm,ifgtp,ifre2
+      if (nid_io.eq.0) write(6,*) 'gfdm/ifgtp/ifre2',ifgfdm,ifgtp,ifre2
 
       if (ifre2) then
          call bin_rd1(ifbswap)  ! rank0 will read mesh data + distribute
@@ -407,7 +411,7 @@ C     Read mesh info
          x = 0
 
          t0 = dclock()
-         if (nid.eq.0)  write(6,*)  'start reading mesh'
+         if (nid_io.eq.0)  write(6,*)  'start reading mesh'
          do i=0,np-1,maxrd
             call nekgsync()
             if (mod(nid,mread).eq.iread) then
@@ -427,7 +431,7 @@ C     Read mesh info
             endif
             iread = iread + 1
          enddo
-         if (nid.eq.0)  write(6,2)  dclock()-t0
+         if (nid_io.eq.0)  write(6,2)  dclock()-t0
  2       format(' read mesh time::',1pe11.4,' seconds ')
 
       endif
@@ -437,8 +441,10 @@ C     Read mesh info
 C     End of input data, close read file.
       IF(NID.EQ.0) THEN
         CLOSE(UNIT=9)
+        if (nid_io.eq.0) then
         write(6,'(A,g13.5,A,/)')  ' done :: close .rea file ',
-     &                            dclock()-etime_tmp,' sec'
+     $                              dclock()-etime_tmp,' sec'
+       endif
       ENDIF
 
 c     This is not an excellent place for this check, but will
@@ -494,10 +500,10 @@ c     to remove it properly we'll have to change all the rea files.
       NPSCL1= NPSCAL+1
       NPSCL2= NPSCAL+2
 
-      if(nid.eq.0) write(6,*) 'NPSCAL/nfield/ldimt',NPSCAL,nfield,ldimt
+      if (nid_io.eq.0) write(6,*) 'NPSCAL/nfield/ldimt',NPSCAL,nfield,ldimt
 
       IF (nfield.GT.LDIMT) THEN
-         if(nid.eq.0) then
+         if(nid_io.eq.0) then
            WRITE(6,21) LDIMT,nfield
    21      FORMAT(//,2X,'Error: This NEKTON Solver has been compiled'
      $             /,2X,'       for',I3,' passive scalars.  This run'
@@ -593,7 +599,7 @@ c             if (cpfld(i,2).lt.0) cpfld(i,2) = -1./cpfld(i,2)
          elseif (indx1(string(i),'IFNM'  ,4).gt.0) then
               read(string(i),*,ERR=490) IFNM
          else
-              if(nid.eq.0) then
+              if(nid_io.eq.0) then
                 write(6,'(1X,2A)') 'ABORT: Unkown logical flag',string
                 write(6,'(30(A,/))')
      &           ' Available logical flags:',
@@ -615,7 +621,7 @@ c             if (cpfld(i,2).lt.0) cpfld(i,2) = -1./cpfld(i,2)
       enddo
 
 c     IF (NPSCL1.GT.LDIMT .AND. IFMHD) THEN
-c        if(nid.eq.0) then
+c        if(nid_io.eq.0) then
 c          WRITE(6,22) LDIMT,NPSCL1
 c  22      FORMAT(/s,2X,'Error: This NEKTON Solver has been compiled'
 c    $             /,2X,'       for',I3,' passive scalars.  A MHD run'
@@ -862,10 +868,10 @@ C
       CALL RZERO(BC ,LRBC)
       CALL BLANK(CBC,LCBC)
 C
-      if (nid.eq.0) write(6,*) 'rdbdry2: ifheat/ifmhd/ifflow=',
-     $                          ifheat,ifmhd,ifflow
-      if (nid.eq.0) write(6,*) 'rdbdry2: nfield/nfldt/nbcs/ibcs=',
-     $                          nfield,nfldt,nbcs,ibcs
+      if (nid_io.eq.0) write(6,*) 
+     $   'rdbdry2: ifheat/ifmhd/ifflow=',ifheat,ifmhd,ifflow
+      if (nid_io.eq.0) write(6,*) 
+     $   'rdbdry2: nfield/nfldt/nbcs/ibcs=',nfield,nfldt,nbcs,ibcs
 C-----------------------------------------------------------------
 C  Formatted Reads
 C-----------------------------------------------------------------
@@ -1204,7 +1210,7 @@ C
 C
 C     Z-component
 C
-      IF (IF3D) THEN
+      IF (ldim.eq.3) THEN
        CALL COPY(TA,ZM1,NTOT)
        CALL COPY(TB,ZM1,NTOT)
        CALL DSOP(TA,'MIN',NX1,NY1,NZ1)
@@ -1251,13 +1257,13 @@ C
          call exitt(1)
       ENDIF
 C
-      IF (NID.EQ.0) WRITE(6,1500)
+      IF (NID_IO.EQ.0) WRITE(6,1500)
  1500 FORMAT('  Mesh consistency check, OK.')
       RETURN
       END
       SUBROUTINE ROTAT2(XYZ,ANGLE,N)
 C
-C     Rotate NPTS through ANGLE (in two directions IF3D).
+C     Rotate NPTS through ANGLE (in two directions if ldim = 3).
 C
       INCLUDE 'SIZE'
       INCLUDE 'INPUT'
@@ -1273,7 +1279,7 @@ C
       RX(1,2)=SINA
       RX(2,1)=-SINA
       RX(3,3)=1.0
-      IF (IF3D) THEN
+      IF (ldim.eq.3) THEN
          RZ(1,1)=COSA
          RZ(3,3)=COSA
          RZ(1,3)=SINA
@@ -1335,7 +1341,7 @@ C
       XI  =SQRT(TI(1))
       YI  =SQRT(TI(2))
       ZI  =1.0
-      IF (IF3D) ZI=SQRT(TI(3))
+      IF (ldim.eq.3) ZI=SQRT(TI(3))
 C
 C     Rescale ( & shift to a nearly mean zero )
 C
@@ -1404,7 +1410,7 @@ C
 C
       DO 1000 IE=1,N
          VOL(IE)=0.0
-         IF (IF3D) THEN
+         IF (ldim.eq.3) THEN
            DO 20 K=1,2
            DO 20 J=1,2
            DO 20 I=1,2
@@ -1488,7 +1494,7 @@ C
       IXX=XYZI(1)
       IYY=XYZI(2)
       IZZ=XYZI(3)
-      IF (IF3D) THEN
+      IF (ldim.eq.3) THEN
          IF (IXX.LE.IYY.AND.IXX.LE.IZZ) THEN
             DO 104 IE=1,NL
                XCG(IE)=CG(1,IE)
@@ -1531,7 +1537,7 @@ C
       XM=FMDIAN(XCG,NL,IFOK)
       YM=FMDIAN(YCG,NL,IFOK)
       ZM=0.0
-      IF (IF3D) ZM=FMDIAN(ZCG,NL,IFOK)
+      IF (ldim.eq.3) ZM=FMDIAN(ZCG,NL,IFOK)
 C
 C     Diagnostics
 C
@@ -1580,10 +1586,10 @@ C
             ENDIF
             IF (YCG(IE).EQ.YM) THEN
 C              look at 3rd direction.
-               IF (IF3D .AND. ZCG(IE).LT.ZM) THEN
+               IF (ldim.eq.3 .AND. ZCG(IE).LT.ZM) THEN
                   NL1=NL1+1
                   LIST1(NL1)=LIST(IE)
-               ELSE IF (IF3D .AND. ZCG(IE).GT.ZM) THEN
+               ELSE IF (ldim.eq.3 .AND. ZCG(IE).GT.ZM) THEN
                   NL2=NL2+1
                   LIST2(NL2)=LIST(IE)
                ELSE
@@ -1723,7 +1729,7 @@ c-----------------------------------------------------------------------
       character*5 version
       real*4      test
 
-      if (nid.eq.0) write(6,*) 'read .re2 file'
+      if (nid_io.eq.0) write(6,*) 'read .re2 file'
 
       ierr=0
       if (nid.eq.0) then
@@ -1776,7 +1782,7 @@ c-----------------------------------------------------------------------
 
       etime1 = dnekclock()
 
-      ibc   = nfield
+      ibc   = 1
       nfldt = nfield
 
 c
@@ -1787,13 +1793,13 @@ c     if (param(32).gt.0) nfldt = ibc + param(32)-1
       lcbc=18*lelt*(ldimt1 + 1)
       call blank(cbc,lcbc)
 
-      if (nid.eq.0) write(6,*)    '  reading mesh '
+      if (nid_io.eq.0) write(6,*)    '  reading mesh '
       call bin_rd1_mesh  (ifbswap)   ! version 1 of binary reader
-      if (nid.eq.0) write(6,*) '  reading curved sides '
+      if (nid_io.eq.0) write(6,*) '  reading curved sides '
       call bin_rd1_curve (ifbswap)
 
       do ifld = ibc,nfldt
-         if (nid.eq.0) write(6,*) '  reading bc for ifld',ifld
+         if (nid_io.eq.0) write(6,*) '  reading bc for ifld',ifld
          call bin_rd1_bc (cbc(1,1,ifld),bc(1,1,1,ifld),ifbswap)
       enddo
 
@@ -1801,8 +1807,10 @@ c     if (param(32).gt.0) nfldt = ibc + param(32)-1
       ierr=0
       if(nid.eq.0) then
         call byte_close(ierr)
+        if(nid_io.eq.0) then
         write(6,*) 'done :: read .re2 file'
         write(6,*) ' '
+        endif
       endif
 
       return
@@ -2142,7 +2150,7 @@ c-----------------------------------------------------------------------
         e  = gllel(eg)
         f  = buf(2)
 
-        call copy4r ( bl(1,f,e),buf(3),5)
+        call drcopy ( bl(1,f,e),buf(3),5)
         call chcopy (cbl(  f,e),buf(8),3)
 
         if (nelgt.ge.1 000 000.and.cbl(f,e).eq.'P  ')
@@ -2175,7 +2183,7 @@ c-----------------------------------------------------------------------
         e  = gllel(eg)
         f  = buf(2)
 
-        call copy4r( curve(1,f,e),buf(3),5)
+        call drcopy( curve(1,f,e),buf(3),5)
         call chcopy(ccurve(f,e)  ,buf(8),1)
       endif
 
@@ -2215,13 +2223,13 @@ c-----------------------------------------------------------------------
           endif
       else
          igroup(e) = buf(0)
-         if (if3d) then
-            call copy4r(xc(1,e),buf( 1),8)
-            call copy4r(yc(1,e),buf( 9),8)
-            call copy4r(zc(1,e),buf(17),8)
+         if (ldim.eq.3) then
+            call drcopy(xc(1,e),buf( 1),8)
+            call drcopy(yc(1,e),buf( 9),8)
+            call drcopy(zc(1,e),buf(17),8)
          else
-            call copy4r(xc(1,e),buf( 1),4)
-            call copy4r(yc(1,e),buf( 5),4)
+            call drcopy(xc(1,e),buf( 1),4)
+            call drcopy(yc(1,e),buf( 5),4)
          endif
       endif
 

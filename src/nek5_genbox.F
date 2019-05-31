@@ -8,8 +8,10 @@ c
       character*132 string
       character*1  string1(132)
       equivalence (string,string1)
-C
-c
+      integer ierr
+
+      ierr = 0
+
       call blank (string,132)
 c     call gets  (string,132,iend,9) ! read name of "box" file from .rea file
 c     read (9,132) string       ! *** MESH?
@@ -49,10 +51,10 @@ c
              if (nid.eq.0) write(6,*) 'nfield > ldimt',nfield,ldimt
              call exitt(1)
          endif
-         call getbox(xgtp,ygtp,zgtp,nfld)  ! Read in the .box file
+         call getbox(xgtp,ygtp,zgtp,nfld,ierr) ! Read in the .box file
          close (unit=7)
-c
       endif
+      if (ierr.ne.0) call exitt(1)
 c
       call bcpbox(nfld)
 c
@@ -118,7 +120,7 @@ c
       do e=1,nelv                                       ! nelt/nel?
          eg = lglel(e)
          call get_exyz(ex,ey,ez,eg,nelx,nely,nelz)
-         if (if3d) then
+         if (ldim.eq.3) then
             l = 0
             do k=0,1
             do j=0,1
@@ -150,8 +152,13 @@ c
       return
       end
 c-----------------------------------------------------------------------
-      subroutine getbox(x,y,z,nfld)
+      subroutine getbox(x,y,z,nfld,ierr)
+c-----------------------------------------------------------------------
+c     Read in the box file.
 c
+c     Note: this subroutine only gets called from MPI rank 0, so if
+c     something goes wrong we can't call `exitt`. Instead return an
+c     error code in `ierr`.
       include 'SIZE'
       include 'INPUT'
       include 'ZPER'
@@ -161,8 +168,9 @@ c
       logical ifevenx,ifeveny,ifevenz,if_multi_seg
       character*1 boxcirc
 c
-      integer nelxyz(3)
-c
+      integer nelxyz(3),ierr
+
+      ierr = 0
       ifevenx = .false.
       ifeveny = .false.
       ifevenz = .false.
@@ -183,7 +191,7 @@ c
          nelx = nelxyz(1)
          nely = nelxyz(2)
          nelz = 1
-         if (if3d) nelz = nelxyz(3)
+         if (ldim.eq.3) nelz = nelxyz(3)
 
          ifld0 = 1
          ifld1 = nfld
@@ -193,7 +201,7 @@ c
             call getcv(gtp_cbc(1,ifld),3,6,iend,7)
             write(6,*) 'CBC1',(gtp_cbc(k,ifld),k=1,nbc),ifld
          enddo
-      elseif (if3d) then
+      elseif (ldim.eq.3) then
          call geti3(nelx,nely,nelz,iend,7)
 c
          if (nelx.lt.0) ifevenx = .true.
@@ -206,7 +214,8 @@ c
          if (nelx.gt.lelx.or.nely.gt.lely.or.nelz.gt.lelz) then
             write(6,*) 'Abort, increase lelx,..lelz and recompile',
      $                    nelx,nely,nelz,lelx,lely,lelz
-            call exitt(1)
+            ierr = 1
+            return
          endif
 c
          nery = nely
@@ -286,7 +295,8 @@ c
          if (nelx.gt.lelx.or.nely.gt.lely) then
             write(6,*) 'Abort, increase lelx,lely and recompile',
      $                    nelx,nely,lelx,lely
-            call exitt(1)
+            ierr = 1
+            return
          endif
 c
          nery = nely
@@ -435,7 +445,7 @@ c
             yc(3,e) = y(ey  )
             yc(4,e) = y(ey  )
 c
-            if (if3d) then
+            if (ldim.eq.3) then
 c
                xc(5,e) = x(ex-1)
                xc(6,e) = x(ex  )

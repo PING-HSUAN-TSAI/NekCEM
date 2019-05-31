@@ -133,7 +133,7 @@ C----------------------------------------------------------------------
       subroutine cem_out
 C----------------------------------------------------------------------
 #ifdef MPIIO
-#ifndef  NO_IO
+#ifndef NO_IO
       implicit none
       include 'SIZE'
       include 'TOTAL'
@@ -144,182 +144,156 @@ C----------------------------------------------------------------------
       include 'PML'
       include 'RTIMER'
 
-      common  /outvtk/vtkout1(3*lx1*ly1*lz1*lelt)
-     $               ,vtkout2(3*lx1*ly1*lz1*lelt)
-     $               ,vtkout3(3*lx1*ly1*lz1*lelt)
-     $               ,vtkout4(3*lx1*ly1*lz1*lelt)
-      real    vtkout1,vtkout2,vtkout3,vtkout4
+      common  /outvtk/vtkout1(3*lx1*ly1*lz1*lelt),
+     $                vtkout2(3*lx1*ly1*lz1*lelt),
+     $                vtkout3(3*lx1*ly1*lz1*lelt),
+     $                vtkout4(3*lx1*ly1*lz1*lelt)
+      real vtkout1,vtkout2,vtkout3,vtkout4
 
       integer iooption,numfiles,irestart,idouble
-      save    iooption,numfiles,irestart,idouble
+      save iooption,numfiles,irestart,idouble
       integer icomptrace,iotrace
-      save    icomptrace,iotrace
-      integer iparam1,iparam2,iparam3,iparam4,iparam5,iparam6,iparam7
+      save icomptrace,iotrace
 
       integer icalld
-      save    icalld
-      data    icalld/0/
-      real*8  dclock,pretime,endtime
-      integer i99
+      save icalld
+      data icalld /0/
+      real*8 dclock,pretime,endtime
       integer nxyzl3
 
-c...  dumpno for restarting case comes from previous step
       if (icalld.eq.0) then
-         cpu_t_io= 0.0
+         cpu_t_io = 0.0
 
-         if (nid.eq.0) then
-             iparam1=param(81)
-             iparam2=param(82)
-             iparam3=param(83)      !io-frequency for restart files
-             iparam4=0              !restart dumpno
-             iparam5=param(85)      !write compute trace                  
-             iparam6=param(86)      !write io trace                       
-             iparam7=param(87)      !write io trace                       
+         iooption = param(81)
+         numfiles = param(82)
+         irestart = param(83)   ! io-frequency for restart files
+         dumpno = param(84)     ! restart dumpno
+         icomptrace = param(85) ! write compute trace
+         iotrace = param(86)    ! write io trace
+         idouble = param(87)    ! write io trace
+
+         if (idouble.eq.0) then
+            ifdouble = .true.
          else
-             iparam1=0
-             iparam2=0
-             iparam3=0              !io-frequency for restart files
-             iparam4=0
-             iparam5=0              !write compute trace                  
-             iparam6=0              !write io trace                       
-             iparam7=0              !write io trace                       
+            ifdouble = .false.
          endif
-         if (ifrestart) then
-            if (nid.eq.0) then
-             iparam4= param(84)+1   !restart dumpno update
-            else
-             iparam4= 0
-            endif
-         endif
-c...     iglsum is not doing smart bcast'ing, revert back to bcast -- jingfu
-         call bcast(iparam1,isize)
-         call bcast(iparam2,isize)
-         call bcast(iparam3,isize)
-         call bcast(iparam4,isize)
-         call bcast(iparam5,isize)
-         call bcast(iparam6,isize)
-         call bcast(iparam7,isize)
 
-         iooption    =iparam1
-         numfiles    =iparam2
-         irestart    =iparam3
-         dumpno      =iparam4
-         icomptrace  =iparam5
-         iotrace     =iparam6
-         idouble     =iparam7
-
-         IFDOUBLE=.true.
-         if (idouble.ne.0) IFDOUBLE=.false.
-         if (nid.eq.0) write(6,*) 'IFDOUBLE=',IFDOUBLE
-         if (nid.eq.0) write(6,*) 'param(81)=',iparam1
-         if (nid.eq.0) write(6,*) 'param(82)=',iparam2
-         if (nid.eq.0) write(6,*) 'param(83)=',irestart
-         if (nid.eq.0) write(6,*) 'dumpno   =',dumpno
-
-         icalld  = 1
+         icalld = 1
          call pass_io_params(iooption,numfiles,ndim,mesh)
       endif
 
-c...  param(85) decide if compute trace should be generated
+c     Compute trace is generated if `icomptrace > 0`
       if (icomptrace.gt.0) call writecomputetrace(istep,cpu_dtime,cpu_t)
-
-c...  no output/restart files will be generated
+c     If `iooption = 0` no output/restart files are generated
       if (iooption.eq.0) return
 
-c...  this produces output for (io-option=iparam) with timing info
       if (iostep.gt.0) then
-
-      if ((mod(istep,iostep).eq.0).or.(istep.eq.nsteps)) then
-
-         if (istep.gt.0) then
-
+         if ((mod(istep,iostep).eq.0).or.(istep.eq.nsteps)) then
+            if (istep.gt.0) then
 #ifdef _OPENACC
-!$ACC UPDATE HOST(HN,EN)   ! ACC data copy from GPU--> CPU
+!$ACC UPDATE HOST(HN,EN)
 #endif
-         endif
-
+            endif
 #if defined SCHROD
-         call vtk_nonswap_field( Ur, Ui, Ui,vtkout1)
-         call vtk_nonswap_field( Qr(1,1),Qr(1,2),Qr(1,3),vtkout2)
-         call vtk_nonswap_field( Qi(1,1),Qi(1,2),Qi(1,3),vtkout3)
-         call vtk_nonswap_field( sUr,sQr(1,1),sQi(1,1),vtkout4)
+            call vtk_nonswap_field( Ur, Ui, Ui,vtkout1)
+            call vtk_nonswap_field( Qr(1,1),Qr(1,2),Qr(1,3),vtkout2)
+            call vtk_nonswap_field( Qi(1,1),Qi(1,2),Qi(1,3),vtkout3)
+            call vtk_nonswap_field( sUr,sQr(1,1),sQi(1,1),vtkout4)
 #elif defined DRIFT
-         nxyzl3 = nx1*ny1*nz1*nelt*3
-         call sub3(wJ,cnj,cpj,nxyzl3)
-         call vtk_nonswap_field( cN, cP, potent,vtkout1)
-         call vtk_nonswap_field(wJ(1,1),wJ(1,2),wJ(1,3),vtkout2)
-         call vtk_nonswap_field(cnj(1,1),cnj(1,2),cnj(1,3),vtkout3)
-         call vtk_nonswap_field(cpj(1,1),cpj(1,2),cpj(1,3),vtkout4)
+            call vtk_nonswap_field(cN(1,1),cN(1,2),potent,vtkout1)
+            call vtk_nonswap_field(scN(1,1),scN(1,2),spotent,vtkout2)
+            call vtk_nonswap_field(cnj(1,1,1),cnj(1,2,1),cnj(1,3,1)
+     $           ,vtkout3)
+            call vtk_nonswap_field(cnj(1,1,2),cnj(1,2,2),cnj(1,3,2)
+     $           ,vtkout4)
 #elif defined MAXWELL
-         call vtk_nonswap_field(EN(1,1),EN(1,2),EN(1,3),vtkout1)
-         call vtk_nonswap_field(HN(1,1),HN(1,2),HN(1,3),vtkout2)
-         call vtk_nonswap_field(sEN(1,1),sEN(1,2),sEN(1,3),vtkout3)
-         call vtk_nonswap_field(sHN(1,1),sHN(1,2),sHN(1,3),vtkout4)
+            call vtk_nonswap_field(EN(1,1),EN(1,2),EN(1,3),vtkout1)
+            call vtk_nonswap_field(HN(1,1),HN(1,2),HN(1,3),vtkout2)
+            call vtk_nonswap_field(sEN(1,1),sEN(1,2),sEN(1,3),vtkout3)
+            call vtk_nonswap_field(sHN(1,1),sHN(1,2),sHN(1,3),vtkout4)
 #else
 #error "Invalid application"
 #endif
+            pretime = dclock()
+            call starttiming
 
-         pretime = dclock()
-         call starttiming
-         call checkpoint_write(iooption,dumpno)
+            if (iooption.eq.0) then
+               call cem_out_fields4(dumpno)
+               call cem_out_fields3(dumpno)
+               call cem_out_fields2(dumpno)
+            elseif (iooption.eq.1) then
+               call cem_out_fields(dumpno)
+            elseif (iooption.eq.2) then
+               call cem_out_fields2(dumpno)
+            elseif (iooption.eq.3) then
+               call cem_out_fields3(dumpno)
+#ifdef MPI
+            elseif (iooption.eq.4) then
+               call cem_out_fields4(dumpno)
+            elseif (iooption.eq.5) then
+               call set_io_option(5)
+               call cem_out_fields6(dumpno)
+            elseif (iooption.eq.6) then
+               call set_io_option(6)
+               call cem_out_fields6(dumpno)
+            elseif (iooption.eq.-6) then
+               call set_io_option(-6)
+               call cem_out_fields6(dumpno)
+            elseif (iooption.eq.8) then
+               call set_io_option(8)
+               call cem_out_fields6(dumpno)
+            elseif (iooption.eq.18) then
+               call set_io_option(18)
+               call cem_out_fields6(dumpno)
+#endif
+            else
+               if (nid.eq.0) write(*,10) iooption
+ 10            format('ERROR: cem_out: unknown iooption:',i4)
+               call exitt(1)
+            endif
+            call endtiming
+            endtime = dclock()-pretime
+            cpu_t_io = cpu_t_io+endtime
 
-c...     maybe need a thread_join function to ensure the last io step finished
-         call endtiming
-         endtime = dclock()-pretime
-         cpu_t_io= cpu_t_io+endtime
+            call printio(iooption,istep)
 
-         call printio(iooption,istep)
-
-c...  produce restart files
-         if (irestart.gt.0) then !io-frequency for restart files >= nonzero
-
-          if (mod(istep,irestart*iostep).eq.0) then
-
+c     Create restart files
+            if (irestart.gt.0) then
+               if (mod(istep,irestart*iostep).eq.0) then
 #ifdef NO_MPI
-           write(6,*) 'non-mpi run: no restart file produced'
+                  write(6,*) 'non-mpi run: no restart file produced'
 #else
-           swaptime=dclock()
-
+                  swaptime=dclock()
 #if defined SCHROD
-           call vtk_swap_field( Ur, Ui, Ui,vtkout1)
-           call vtk_swap_field( Qr(1,1),Qr(1,2),Qr(1,3),vtkout2)
-           call vtk_swap_field( Qi(1,1),Qi(1,2),Qi(1,3),vtkout3)
-           call vtk_swap_field( sUr,sQr(1,1),sQi(1,1),vtkout4)
+                  call vtk_swap_field(Ur,Ui,Ui,vtkout1)
+                  call vtk_swap_field(Qr(1,1),Qr(1,2),Qr(1,3),vtkout2)
+                  call vtk_swap_field(Qi(1,1),Qi(1,2),Qi(1,3),vtkout3)
 #elif defined DRIFT
-           call vtk_swap_field( cN, cP, potent,vtkout1)
+                  call vtk_swap_field(cN(1,1),cN(1,2),potent,vtkout1)
 #elif defined MAXWELL
-           call vtk_swap_field(EN(1,1),EN(1,2),EN(1,3),vtkout1)
-           call vtk_swap_field(HN(1,1),HN(1,2),HN(1,3),vtkout2)
-           call vtk_swap_field(sEN(1,1),sEN(1,2),sEN(1,3),vtkout3)
-           call vtk_swap_field(sHN(1,1),sHN(1,2),sHN(1,3),vtkout4)
+                  call vtk_swap_field(EN(1,1),EN(1,2),EN(1,3),vtkout1)
+                  call vtk_swap_field(HN(1,1),HN(1,2),HN(1,3),vtkout2)
 #else
 #error "Invalid application"
 #endif
-
-           swaptime=dclock()-swaptime
-           swaptime=swaptime/4.0
-           i99=99
-
-          !For threading, restart frequency should be zero on BG/P: fixme -- misun/jing 3/23/2012 
-          !To be tested the same case on XK6: not likely to cause the same situation.                      
-           if (nid.eq.0) write(6,3) dumpno,irestart*iostep,swaptime
-           call checkpoint_write(i99,dumpno)
+                  swaptime = dclock()-swaptime
+                  swaptime = swaptime/4.0
+                  if (nid.eq.0) write(6,20) dumpno,irestart*iostep,
+     $                 swaptime
+                  call cem_restart_out(dumpno)
 #endif
+               endif
+            endif
 
-          endif
+ 20         format('cem_out: write restart files at dumpno = ',i10,
+     $           ', irestart*iostep=',i10,', swaptime=',e11.4)
+            dumpno = dumpno+1
          endif
-    3    format(' ---> write restart files at dumpno=',i10,
-     $          ', irestart*iostep=',i10,', swaptime=',e11.4,'\n')
-         dumpno = dumpno + 1
-
-      endif
       endif
 #endif
 #endif
-c
       return
       end
-
 C----------------------------------------------------------------------
       subroutine cem_out_fields6(dumpno)
 #ifdef MPIIO
@@ -385,7 +359,7 @@ c ... VTK FORMAT BINARY
       call writeheader6()
       call writenodes6 (vtkxyz,npts)
 
-      if  (if3d) then
+      if  (ldim.eq.3) then
           call write3dcells6(fpcnt,nelt,ncell,npts)
       else
           call write2dcells6(fpcnt,nelt,ncell,npts)
@@ -492,26 +466,16 @@ c...  calling c-routines
 #elif defined DRIFT
       if (ifdouble) then
          call writefield4_double(31,vtkout1,npts)
-c        call writefield4_double(32,vtkout2,npts)
-c        call writefield4_double(33,vtkout3,npts)
-c        call writefield4_double(34,vtkout4,npts)
       else
          call writefield4(31,vtkout1,npts)
-c        call writefield4(32,vtkout2,npts)
-c        call writefield4(33,vtkout3,npts)
-c        call writefield4(34,vtkout4,npts)
       endif
 #elif defined MAXWELL
       if (ifdouble) then
          call writefield4_double(1,vtkout1,npts)
          call writefield4_double(2,vtkout2,npts)
-         call writefield4_double(3,vtkout3,npts)
-         call writefield4_double(4,vtkout4,npts)
       else
          call writefield4(1,vtkout1,npts)
          call writefield4(2,vtkout2,npts)
-         call writefield4(3,vtkout3,npts)
-         call writefield4(4,vtkout4,npts)
       endif
 #else
 #error "Invalid application"
@@ -637,7 +601,7 @@ c...  calling c-routines
       call openfile   (dumpno,nid)     ! vtkbin.c
       call writeheader()
       call writenodes (vtkxyz,npts)
-      if (if3d) then
+      if (ldim.eq.3) then
           call write3dcells(fpcnt,nelt,ncell,npts)
       else
           call write2dcells(fpcnt,nelt,ncell,npts)
@@ -694,7 +658,7 @@ c-----------------------------------------------------------------------
       real              xmr1,ymr1,zmr1,exr,eyr,ezr,hxr,hyr,hzr
       common  /c_rvtk/ vtkxyz(3*lx1*ly1*lz1*lelt)
       real             vtkxyz
-      common  /c_ivtk/ fpcnt (8*lx1*lx1*lx1*lelt)
+      common  /c_ivtk/ fpcnt (8*lx1*ly1*lz1*lelt)
       integer          fpcnt
 
       !write in float --> read in double: doesn't work
@@ -704,7 +668,7 @@ c-----------------------------------------------------------------------
       integer n,dumpno,idump,idummy
       integer iooption,numfiles,idouble
       real*8  dclock,t0
-      real    glsum,restart_time,dtvtk
+      real    glsum,dtvtk
 
       integer nxyz3,nn1,nn2
       integer i
@@ -752,14 +716,14 @@ c-----------------------------------------------------------------------
           time = 0.0
       endif
       time = glsum(time,1)
-      if (nid.eq.0) write(6,*) 'restart at time=time+rst_time',time
+c     if (nid.eq.0) write(6,*) 'restart at time=time+rst_time',time
 
       !call printchecks  (idump)
       call readnodes4   (vtkxyz,npts) ! dummy reading but necessary
       call swap_real_backward(vtkxyz,nxyz3)
       call save2vectors (xmr1,ymr1,zmr1,vtkxyz,npts)
 
-      if (if3d) then
+      if (ldim.eq.3) then
            call read3dcells4(idummy,idummy,idummy,npts)  !no return
       else
            call read2dcells4(idummy,idummy,idummy,npts)  !no return
@@ -788,20 +752,14 @@ c-----------------------------------------------------------------------
          call save2vectors       (qi(1,1),qi(1,2),qi(1,3),vtkxyz,npts)
       endif
 #elif defined DRIFT
-      if (ifdouble) then
+      if (ifdouble) then  !FIXME: restr DRIFT, Lan
          call readfield4_double  (idummy,vtkxyz,npts)
          call swap_real_backward (vtkxyz,nxyz3)
-         call save2vectors       (cN,cP,potent,vtkxyz,npts)
-c        call readfield4_double  (idummy,vtkxyz,npts)
-c        call swap_real_backward (vtkxyz,nxyz3)
-c        call save2vectors       (scN,scP,spotent,vtkxyz,npts)
+         call save2vectors       (cN(1,1),cN(1,2),potent,vtkxyz,npts)
       else
          call readfield4         (idummy,vtkxyz,npts)
          call swap_real_backward (vtkxyz,nxyz3)
-         call save2vectors       (cN,cP,potent,vtkxyz,npts)
-c        call readfield4         (idummy,vtkxyz,npts)
-c        call swap_real_backward (vtkxyz,nxyz3)
-c        call save2vectors       (scN,scP,spotent,vtkxyz,npts)
+         call save2vectors       (cN(1,1),cN(1,2),potent,vtkxyz,npts)
       endif
 #elif defined MAXWELL
       if (ifdouble) then
@@ -815,7 +773,7 @@ c        call save2vectors       (scN,scP,spotent,vtkxyz,npts)
          call readfield4          (idummy,vtkxyz,npts)
          call swap_real_backward  (vtkxyz,nxyz3)
          call save2vectors        (en(1,1),en(1,2),en(1,3),vtkxyz,npts)
-         call save2vectors        (hn(1,1),hn(1,2),hn(1,3),vtkxyz,npts)
+         call readfield4          (idummy,vtkxyz,npts)
          call swap_real_backward  (vtkxyz,nxyz3)
          call save2vectors        (hn(1,1),hn(1,2),hn(1,3),vtkxyz,npts)
       endif

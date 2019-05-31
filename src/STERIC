@@ -1,0 +1,16 @@
+c-----Steric term  ! Lan
+      COMMON /STERIC/ s_g (LDIMT-1,LDIMT-1)
+     $             ,  s_a (LDIMT-1,LDIMT-1)
+     $             ,  h1s (lpts,LDIMT-1,LDIMT-1)
+     $             ,  h2s (lpts,LDIMT-1,LDIMT-1)
+     $             ,  gradc (lpts,3,LDIMT-1) ! gradient of i-th species
+      real            s_g
+     $             ,  s_a
+     $             ,  h1s
+     $             ,  h2s
+     $             ,  gradc
+
+      COMMON /GMRESS/ vn(lx1*ly1*lz1*lelv,lgmres)
+     $             ,  vp(lx1*ly1*lz1*lelv,lgmres)
+     $             ,  vvC(lx1*ly1*lz1*lelv,LDIMT-1,lgmres) ! Mind order of index, Lan
+      real vn,vp,vvC

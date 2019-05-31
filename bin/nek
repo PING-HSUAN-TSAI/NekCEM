@@ -2,21 +2,20 @@
 
 set -e
 
+echo $1        >  SESSION.NAME
+echo `pwd`'/' >>  SESSION.NAME
+
 DBG=
-REQ_WALLTIME="00:30:00" # short enough for short queue on BGL
-# PROJECT="NEK5000"
-# PROJECT="NEKCEM"
-# PROJECT="GasJetsCyl_tesp"
-# PROJECT="NTI104"
-# PROJECT="CEED_ECPAD"
-PROJECT="Comp_Perf_Workshop"
+# Correct format for qsub
+# REQ_WALLTIME="00:30:00"
+# Correct format for bsub
+REQ_WALLTIME="10"
+PROJECT="CSC262"
 
 if [ $2 -gt 1024 ]; then
 PROSIZE="prod"
-REQ_WALLTIME="00:40:00"
 else
 PROSIZE="prod-devel"
-REQ_WALLTIME="00:10:00"
 fi
 SUBMIT_ARGS=""
 WAIT="0"
@@ -81,56 +80,12 @@ if test "$1" = ""; then
 else
   REAFILE=$1
   CORECOUNT=$2
+  NODECOUNT=$3
 fi
 
 SESSION=${REAFILE%.rea}
-cat <<EOF > SESSION.NAME
-$SESSION
-$(pwd)/
-EOF
 
-rm -f vtk/*
-
-if    test -d /lustre  ; then  # running on OLCF Cray
-
-#        rm $SESSION.pbs
-        rm -f logfile
-        rm -f $SESSION.np=$CORECOUNT.output
-        OUTFILE="`pwd`/$SESSION.np=$CORECOUNT-cray-`date "+%F_%H_%M_%S"`"
-        touch $SESSION.rea
-        touch $OUTFILE.output
-        ln $OUTFILE.output $SESSION.np=$CORECOUNT.output
-        ln $OUTFILE.output logfile
-
-        mkdir -p vtk
-
-        if ! pbsfile=`mktemp $SESSION.pbs.XXXXXX` ; then
-           echo "Failed to create temp file for qsub! Exiting"
-           exit 1
-        fi
-        chmod 777 $pbsfile
-
-        # dump out the information needed to the pbs file
-        # TODO: this feels REALLY clunky. There should be a better way..
-        echo "#!/bin/csh" >> $pbsfile
-        echo "#PBS -A $PROJECT" >> $pbsfile
-        echo "#PBS -N $SESSION" >> $pbsfile
-        echo "#PBS -o $PWD/$SESSION.np=$CORECOUNT-cray-`date "+%F_%H_%M_%S"`.output" >> $pbsfile
-        echo "#PBS -e $PWD/$SESSION.np=$CORECOUNT-cray-`date "+%F_%H_%M_%S"`.error" >> $pbsfile
-        echo "#PBS -l walltime=$REQ_WALLTIME,nodes=$3" >> $pbsfile
-        echo "#PBS -j oe" >> $pbsfile
-        echo " cd `pwd`">> $pbsfile
-        echo " aprun -n $CORECOUNT ./nekcem ">> $pbsfile
-
-        #craypat: profiling below
-        #echo " aprun -n $CORECOUNT ./nekcem+pat ">> $pbsfile
-
-        qsub $pbsfile
-        rm $pbsfile
-        echo "job submitted on OLCF Cray, #MPI_ranks=$CORECOUNT, #Cray_nodes=$3"
-        qstat -a|grep $USER
-
-elif  test -d /bgsys; then  # running on BG/Q
+if test -d /bgsys; then  # running on BG/Q
 
   if test -d /gpfs; then # TODO: change this when Mira comes online
 
@@ -153,8 +108,8 @@ elif  test -d /bgsys; then  # running on BG/Q
       rm -Rf vtk
       mkdir -p vtk
 
-      echo "qsub  -node $3  --mode c$CORECOUNT -A $PROJECT -t $REQ_WALLTIME -O $OUTFILE nekcem"
-      COBALTJOB=`qsub -n $3  --mode c$CORECOUNT -A $PROJECT -t $REQ_WALLTIME -O $OUTFILE nekcem`
+      echo "qsub  -node $3  --mode c$CORECOUNT -A $PROJECT -t $REQ_WALLTIME -O $OUTFILE nekcem $SESSION"
+      COBALTJOB=`qsub -n $3  --mode c$CORECOUNT -A $PROJECT -t $REQ_WALLTIME -O $OUTFILE nekcem $SESSION`
       echo "=== cobalt job $COBALTJOB submitted to veas"
 
   else
@@ -178,8 +133,8 @@ elif  test -d /bgsys; then  # running on BG/Q
       rm -Rf vtk
       mkdir -p vtk
 
-      echo "cqsub  -n $CORECOUNT -m vn -p $PROJECT -q $PROSIZE -e BG_MAPPING=TXYZ -t $REQ_WALLTIME -O $OUTFILE nekcem"
-      COBALTJOB=`cqsub -n $CORECOUNT -m vn -p $PROJECT -q $PROSIZE -e BG_MAPPING=TXYZ -t $REQ_WALLTIME -O $OUTFILE nekcem`
+      echo "cqsub  -n $CORECOUNT -m vn -p $PROJECT -q $PROSIZE -e BG_MAPPING=TXYZ -t $REQ_WALLTIME -O $OUTFILE nekcem $SESSION"
+      COBALTJOB=`cqsub -n $CORECOUNT -m vn -p $PROJECT -q $PROSIZE -e BG_MAPPING=TXYZ -t $REQ_WALLTIME -O $OUTFILE nekcem $SESSION`
       echo "=== cobalt job $COBALTJOB submitted"
 
   fi
@@ -205,72 +160,53 @@ elif  test -d /bgsys; then  # running on BG/Q
   fi
 
 
-elif test -d /fusion ; then
-
-  rm    -Rf vtk
-  mkdir -p  vtk
-
-  if test "$PBS_NODEFILE" != ""; then
-    if test "$CORECOUNT" = ""; then
-      CORECOUNT="`cat $PBS_NODEFILE | wc -l`"
-    fi
-    echo "*** running on fusion with $CORECOUNT nodes"
-    mpirun -np $CORECOUNT -machinefile $PBS_NODEFILE ./nekcem
-  else
-    echo "*** running on fusion in non-interactive mode"
-        if ! pbsfile=`mktemp $SESSION.XXXXXX` ; then
-           echo "Failed to create temp file for qsub! Exiting"
-           exit 1
-        fi
-        chmod 777 $pbsfile
-
-        if test "$CORECOUNT" = ""; then
-         CORECOUNT=1
-          echo "*** defaulting to $CORECOUNT nodes on Jazz"
-        fi
-
-        # dump out the information needed to the pbs file
-        # TODO: this feels REALLY clunky. There should be a better way..
-        echo "#!`which bash`" >> $pbsfile
-        echo "#PBS -l nodes=$CORECOUNT:ppn=8 -I" >> $pbsfile
-        echo "#PBS -l walltime=$REQ_WALLTIME" >> $pbsfile
-        echo "#PBS -o $PWD/$SESSION-$CORECOUNT.output" >> $pbsfile
-        echo "#PBS -e $PWD/$SESSION-$CORECOUNT.error" >> $pbsfile
-
-        # combine output and error
-        echo "#PBS -j oe" >> $pbsfile
-
-        # tells PBS to send an email; disable if unwanted
-        # echo "#PBS -m abe" >> $pbsfile
-
-        # check if the session starts with a number.
-        # If so, qsub freaks out and
-        # so we need to append something to the start so it all works
-        sess=$SESSION
-        startChar=${sess:0:1}
-        if [ $startChar -eq $startChar 2>/dev/null ]; then
-             sess="job_$sess"
-        fi
-        echo "#PBS -N $sess" >> $pbsfile
-        echo 'export NN=`wc -l $PBS_NODEFILE | awk \
-             '\''{print $1}'\''` ' >> $pbsfile
-        echo 'EXE=$PBS_O_WORKDIR/nekcem' >> $pbsfile
-        echo 'mpirun -np $NN -wd $PBS_O_WORKDIR \
-              -machinefile $PBS_NODEFILE $EXE ' >> $pbsfile
-
-        echo "running job with pbs file " $pbsfile
-        qsub $pbsfile
-        rm $pbsfile
-  fi
 elif [[ $HOSTNAME =~ .*theta.* ]]; then
     QSUBSCRIPT=$(mktemp -p $PWD)
-    cat <<EOF > $QSUBSCRIPT
-#!/bin/bash
-aprun -n $CORECOUNT -d 2 -cc depth -j 1 ./nekcem
-EOF
+
+    echo "#!/bin/bash" >> $QSUBSCRIPT
+    echo "aprun -n $CORECOUNT -d 2 -cc depth -j 1 ./nekcem $SESSION" >> $QSUBSCRIPT
     chmod a+x $QSUBSCRIPT
     qsub -A $PROJECT -t $REQ_WALLTIME -q default -n $3 \
 	-o logfile $QSUBSCRIPT
+
+elif [[ $HOSTNAME =~ .*titan.* ]]; then
+    QSUBSCRIPT=$(mktemp -p $PWD)
+    DATE=$(date "+%F_%H_%M_%S")
+    PROCSPERNODE=$(($CORECOUNT/$NODECOUNT))
+
+    echo "#!/bin/bash -l" >> $QSUBSCRIPT
+    echo "#PBS -A $PROJECT" >> $QSUBSCRIPT
+    echo "#PBS -N $SESSION" >> $QSUBSCRIPT
+    echo "#PBS -o $PWD/$SESSION.np=$CORECOUNT-titan-cpu-$DATE.output" >> $QSUBSCRIPT
+    echo "#PBS -e $PWD/$SESSION.np=$CORECOUNT-titan-cpu-$DATE.error" >> $QSUBSCRIPT
+    echo "#PBS -l walltime=$REQ_WALLTIME,nodes=$NODECOUNT" >> $QSUBSCRIPT
+    echo "#PBS -j oe" >> $QSUBSCRIPT
+    echo "cd `pwd`" >> $QSUBSCRIPT
+    echo " aprun -n $CORECOUNT ./nekcem $SESSION">> $QSUBSCRIPT
+
+    qsub -V $QSUBSCRIPT
+    rm $QSUBSCRIPT
+    echo "job submitted on OLCF Titan, #CPUs=$CORECOUNT, #Nodes=$NODECOUNT, #Cores/node=$PROCSPERNODE"
+
+elif [[ $HOSTNAME =~ .*summitdev.* ]]; then
+    BSUBSCRIPT=$(mktemp -p $PWD)
+    DATE=$(date "+%F_%H_%M_%S")
+    PROCSPERNODE=$(($CORECOUNT/$NODECOUNT))
+
+    echo "#!/bin/bash" >> $BSUBSCRIPT
+    echo "#BSUB -P $PROJECT" >> $BSUBSCRIPT
+    echo "#BSUB -J $SESSION" >> $BSUBSCRIPT
+    echo "#BSUB -o $PWD/$SESSION.np=$CORECOUNT-summitdev-cpu-$DATE.output" >> $BSUBSCRIPT
+    echo "#BSUB -e $PWD/$SESSION.np=$CORECOUNT-summitdev-cpu-$DATE.error" >> $BSUBSCRIPT
+    echo "#BSUB -W $REQ_WALLTIME" >> $BSUBSCRIPT
+    echo "#BSUB -nnodes $NODECOUNT" >> $BSUBSCRIPT
+    echo "jsrun -n$NODECOUNT  -a$PROCSPERNODE ./nekcem $SESSION " >> $BSUBSCRIPT
+    echo "cd `pwd`" >> $BSUBSCRIPT
+
+    bsub $BSUBSCRIPT
+    rm $BSUBSCRIPT
+    echo "job submitted on OLCF Summitdev, #CPUs=$CORECOUNT, #Nodes=$NODECOUNT, #Cores/node=$PROCSPERNODE"
+
 else
     if test "$2" = ""; then
 	echo "This is to run with MPI: must specify np# $2"
