@@ -75,6 +75,7 @@ c-----------------------------------------------------------------------
       real rnorm,rnorms(lcdim),rnorms_pre(lcdim),res_gmres(lcdim)
       real rinorm,rinorms(lcdim),ratio
       real fnorm,fnorms(lcdim)
+      real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim),NTstep_norm
       real temp(lpts1)
 
       integer i,j,k,n,ic
@@ -206,12 +207,21 @@ c     $           ,mult,lcdim,npts,tolGMRES)
           enddo
           rnorm = glmax(rnorms,lcdim)
           if (iterNT.eq.1) rinorm=rnorm
+          write(6,*)'rinorm',rinorm
           ratio=rnorm/rinorm 
+
+c         check rel. update step size of NT to avoid stalling
+          do ic = 1,lcdim
+            norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
+            norms_sk(ic) = sqrt(norms_sk(ic))
+            sk_ratio(ic) = norms_sk(ic) / norms_ck0(ic)
+          enddo
+          NTstep_norm = glmax(sk_ratio,lcdim)
 
           if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
      $       istep,iterNT,ratio,rnorm,rinorm,dtNT,dt
 
-          if (ratio.lt.tolNT) goto 900
+          if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
 c          if (rnorm.lt.new_tol) goto 900
 
         enddo
@@ -233,6 +243,7 @@ c       compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
         fnorm  = glmax(fnorms,lcdim)
         f_pre = f_now  ! set up old fnorm to f_pre
         f_now = fnorm  ! set up new fnorm to f_now
+        write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
 
 c       compute the CPU_time
         cpu_dtime = dclock()-cpu_dtime
