@@ -175,6 +175,11 @@ c       determine dtNT, dt
 c       Start Newton iteration
         do iterNT=1,maxit
 
+          do ic = 1,lcdim
+            norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
+            norms_ck0(ic) = sqrt(norms_ck0(ic))
+          enddo
+
 c        determine inexactNT
           do ic = 1,lcdim
             call get_inexactNT(inexactNT(ic),rnorms(ic),rnorms_pre(ic)
@@ -219,7 +224,7 @@ c         check rel. update step size of NT to avoid stalling
           NTstep_norm = glmax(sk_ratio,lcdim)
 
           if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
-     $       istep,iterNT,ratio,rnorm,rinorm,dtNT,dt
+     $       istep,iterNT,ratio,rnorm,rinorm,dtNT,dt,NTstep_norm
 
           if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
 c          if (rnorm.lt.new_tol) goto 900
