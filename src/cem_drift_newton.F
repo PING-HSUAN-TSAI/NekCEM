@@ -48,6 +48,7 @@ c     Set default ParamNT
                              ! c = 0.0001 is the best case up to now
 
         tolNT     = 1e-5     ! tolerance for Newton method
+        tolNTstep = 1e-9     ! to avoid NT loop stalling
         max_dtNT  = 1E20     ! Max. of dtNT, avoid NaN
         min_ftol  = 1E-12    ! Min. of f norm, avoid NaN
         max_dt    = 1E-1     ! Max. of dt, should be satisfied CFL
@@ -173,7 +174,7 @@ c       determine dtNT, dt
 c       Start Newton iteration
         do iterNT=1,maxit
 
-c         determine inexactNT
+c        determine inexactNT
           do ic = 1,lcdim
             call get_inexactNT(inexactNT(ic),rnorms(ic),rnorms_pre(ic)
      $                        ,res_gmres(ic),iterNT,inexactNT_flag)
