@@ -207,7 +207,7 @@ c     $           ,mult,lcdim,npts,tolGMRES)
           enddo
           rnorm = glmax(rnorms,lcdim)
           if (iterNT.eq.1) rinorm=rnorm
-          write(6,*)'rinorm',rinorm
+          if (nid.eq.0) write(6,*)'rinorm',rinorm
           ratio=rnorm/rinorm 
 
 c         check rel. update step size of NT to avoid stalling
@@ -243,7 +243,7 @@ c       compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
         fnorm  = glmax(fnorms,lcdim)
         f_pre = f_now  ! set up old fnorm to f_pre
         f_now = fnorm  ! set up new fnorm to f_now
-        write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
+        if (nid.eq.0) write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
 
 c       compute the CPU_time
         cpu_dtime = dclock()-cpu_dtime
