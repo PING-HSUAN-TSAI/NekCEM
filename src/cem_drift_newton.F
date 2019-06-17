@@ -36,9 +36,9 @@ c     Set default ParamNT
         dtNT = param(1)      ! pseudo-transient time step
                              ! it can grow as istep increase 
 
-        ifsep     = 1        ! 0=couple, 1=separate, Lan
+        ifsep     = 0        ! 0=couple, 1=separate, Lan
         inexactNT_flag = 0   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
-        dt_flag   = 0        ! 0: fixed dt  1: dt = const * dtNT
+        dt_flag   = 1        ! 0: fixed dt  1: dt = const * dtNT
         dtNT_flag = 2        ! 1: dtNT=c*dtNT  2:SER  -2:SER + constraint
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
@@ -48,7 +48,7 @@ c     Set default ParamNT
                              ! c = 0.0001 is the best case up to now
 
         tolNT     = 1e-5     ! tolerance for Newton method
-        max_dtNT  = 1E5      ! Max. of dtNT, avoid NaN
+        max_dtNT  = 1E20     ! Max. of dtNT, avoid NaN
         min_ftol  = 1E-12    ! Min. of f norm, avoid NaN
         max_dt    = 1E-1     ! Max. of dt, should be satisfied CFL
 

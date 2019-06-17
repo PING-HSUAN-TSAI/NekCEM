@@ -1354,6 +1354,28 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine cem_relerror(u,exact,error,n,l2,linf)
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'MASS'
+
+      integer n
+      real u(n),exact(n),error(n)
+      real l2,linf
+
+      real glsc3,glamax
+
+      call sub3(error,exact,u,n)
+
+      l2 = glsc3(error,bm1,error,n)/glsc3(exact,bm1,exact,n)
+      if (l2.gt.0.0) l2 = sqrt(l2)
+
+      linf = glamax(error,n)/glamax(exact,n)
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine chk(s3)
 c-----------------------------------------------------------------------
       include 'SIZE'
