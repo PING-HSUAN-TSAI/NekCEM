@@ -230,7 +230,7 @@ c         check rel. update step size of NT to avoid stalling
 c          if (rnorm.lt.new_tol) goto 900
 
         enddo
- 90     format('newton iter',2i6,1p5e12.4)   
+ 90     format('newton iter',2i6,1p6e12.4)   
 900     continue
 
         do ic = 1,lcdim
