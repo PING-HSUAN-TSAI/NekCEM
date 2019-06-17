@@ -11,7 +11,7 @@ c=====================================================================
      $     jaceps,         ! perturbation parameter for Jacobi-free
      $     dt_const,       ! constant c for the formula dt = c * dtNT
      $     tolNT,          ! tolerance for Newton method
-     $     tolNTstep       ! tolerance for Newton method
+     $     tolNTstep,       ! tolerance for Newton method
      $     max_dtNT,       ! Max. of dtNT, avoid NaN
      $     min_ftol,       ! Min. of tol,  avoid NaN
      $     max_dt,         ! Max. of dt, satisfying CFL
