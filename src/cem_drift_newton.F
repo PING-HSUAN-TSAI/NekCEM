@@ -43,7 +43,7 @@ c     Set default ParamNT
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
         jaceps    = 1e-5     ! perturbation parameter for Jacobi-free
-        dt_const  = 1E-4     ! constant c for the formula dt = c * dtNT
+        dt_const  = 1e-4     ! constant c for the formula dt = c * dtNT
                              ! c = 1, 0.1, 0.01, 0.001, 0.0001
                              ! c = 0.0001 is the best case up to now
 
@@ -170,6 +170,10 @@ c       determine dtNT, dt
         call compute_cfl(npts)
         call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
         dtinv = 1./dt
+        
+        if (mod(istep,5).eq.0) then
+                call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
+        endif
 
 
 c       Start Newton iteration
@@ -1172,3 +1176,275 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine get_J(c_in,pert,invtau,pstep,nn,ncdim)
+      implicit none                         
+      include 'SIZE'                       
+      include 'TOTAL'                     
+      include 'DRIFT'                    
+                                       
+      real J_out(nn*nn,ncdim)          
+      real fi(lpts1,ncdim),ff(lpts1,ncdim)  
+      real fdiff(lpts1,ncdim)              
+      real c_in(lpts1,ncdim) ! c input    
+      real c_out(lpts1,ncdim) ! c output  
+      real pert, invtau                    
+      real p(lpts1,ncdim)                  
+      real w1(nn,ncdim)                 
+      real pertinv                         
+      integer ncdim,nn
+      integer pstep                        
+      integer ic,i,j,k,k1                  
+      integer e,ee
+      integer re,ii,jj,global_n,nglob
+      real flag(lx1*ly1*lz1,lelt)
+      character(20) filename1, filename2   
+                                           
+                                           
+      pertinv = 1./pert                    
+      write(6,*)'====================='    
+      write(6,*)'Begin computing J1'        
+      write(6,*)'Parameter check'          
+      write(6,*)'pert',pert,'pertinv',pertinv
+      write(6,*)'dtNTinv',invtau            
+      write(6,*)'pstep',pstep               
+      write(6,*)'nn',nn,lpts1           
+      write(6,*)'====================='     
+
+      call compute_f_couple(fi,c_in,nn)   
+
+
+      k1 = 0                                
+      do j=1,nn                           
+         k1 =  k1+1                         
+         k  = (k1-1)*nn+1                 
+         do ic = 1,ncdim                    
+            call rzero(p(1,ic),nn)        
+         enddo                              
+         p(j,1) = 1                         
+         call dssum(p(1,1),nx1,ny1,nz1) 
+         do ic = 1,ncdim                    
+         call add3s2(c_out(1,ic),c_in(1,ic),p(1,ic),1.0,pert,nn)
+         enddo                                                   
+         call compute_f_couple(ff,c_out,nn)                    
+         do ic = 1,ncdim                                         
+c           call cmult(ff(1,ic),invtau,nn)                     
+            call sub3(fdiff(1,ic),ff(1,ic),fi(1,ic),nn)        
+            call cmult(fdiff(1,ic),pertinv,nn)
+            call cmult(p(1,ic),invtau,nn)
+         enddo                                                   
+         call sub3(J_out(k,1),p(1,1),fdiff(1,1),nn)
+c        call add3s2(J_out(k,1),p(1,1),fdiff(1,1),invtau,-1.0,nn)
+      enddo                                                            
+
+      write(6,*)'first Jacobian is done'                               
+
+      write(6,*)'====================='    
+      write(6,*)'Begin computing J2'        
+      write(6,*)'Parameter check'          
+      write(6,*)'pert',pert,'pertinv',pertinv
+      write(6,*)'dtNTinv',invtau            
+      write(6,*)'pstep',pstep               
+      write(6,*)'nn',nn,lpts1           
+      write(6,*)'====================='     
+                                                                       
+      k1 = 0                                                           
+      do j=1,nn                                                      
+         k1 =  k1+1                                                    
+         k  = (k1-1)*nn+1                                            
+         do ic = 1,ncdim                                               
+            call rzero(p(1,ic),nn)                                   
+         enddo                                                         
+         p(j,2) = 1                                                    
+         call dssum(p(1,2),nx1,ny1,nz1) 
+        
+         do ic = 1,ncdim                                               
+         call add3s2(c_out(1,ic),c_in(1,ic),p(1,ic),1.0,pert,nn)     
+         enddo                                                     
+         call compute_f_couple(ff,c_out,nn)                      
+         do ic = 1,ncdim                                           
+c           call cmult(ff(1,ic),invtau,nn)                       
+            call sub3(fdiff(1,ic),ff(1,ic),fi(1,ic),nn)          
+         enddo                                                     
+         call add3s2(J_out(k,2),p(1,2),fdiff(1,2),invtau,          
+     $         -pertinv,nn)                                      
+      enddo                                                        
+      write(6,*)'second Jacobian is done'                          
+                                                                   
+      ! print out J                                                
+      write(filename1,'(a,i0,a)') 'Jacobian1_',pstep,'.dat'        
+      write(filename2,'(a,i0,a)') 'Jacobian2_',pstep,'.dat'        
+                                                                   
+      open(50,file=filename1)                                      
+         do i = 1,nn**2                                          
+            write(50,*)J_out(i,1)                                  
+         enddo                                                     
+      close(50)                                                    
+      open(50,file=filename2)                                      
+         do i = 1,nn**2                                          
+            write(50,*)J_out(i,2)                                  
+         enddo                                                     
+      close(50)                                                    
+                                                                   
+      end           
+c-----------------------------------------------------------------------
+      subroutine get_J_new(c_in,pert,invtau,pstep,nn,ncdim)
+      implicit none                         
+      include 'SIZE'                       
+      include 'TOTAL'                     
+      include 'DRIFT'                    
+      include 'POISSON'
+                                       
+      real J_out(lpts1,ncdim)          
+      real fi(lpts1,ncdim),ff(lpts1,ncdim),fdiff(lpts1,ncdim)  
+      real c_in(lpts1,ncdim),c_out(lpts1,ncdim) 
+      real p(lpts1,ncdim)                  
+      real flag(lx1*ly1*lz1,lelt)
+      real uin(lx1*ly1*lz1,lelt),uout(lx1*ly1*lz1,lelt)
+      real pert,invtau,pertinv                    
+      real glsc2
+      integer ncdim,nn,pstep
+      integer ic,i,j,k,k1                  
+      integer e,ee
+      integer re,ii,jj,global_n,nglob
+      character(20) filename1, filename2   
+                                           
+      pertinv = 1./pert                    
+      write(6,*)'====================='    
+      write(6,*)'Begin computing J1'        
+      write(6,*)'Parameter check'          
+      write(6,*)'pert',pert,'pertinv',pertinv
+      write(6,*)'dtNTinv',invtau            
+      write(6,*)'pstep',pstep               
+      write(6,*)'nn',nn,lpts1           
+      write(6,*)'====================='     
+
+      call compute_f_couple(fi,c_in,nn)   
+
+      nxyz = lx1*ly1*lz1
+      write(6,*)'nxyz',nxyz
+
+      global_n = glsc2(dmask(1,1),mult,nn)
+      write(6,*)'global_n',global_n
+      nglob    = global_n + 0.4          ! Rounding
+
+      do e=1,nelv
+         re = e 
+         call cfill(flag(1,e),float(re),nxyz)
+      enddo
+      call dsop(flag,'min',nx1,ny1,nz1)
+                                            
+      j=0
+      do e=1,nelv
+      do jj=1,nxyz
+         re = e
+         ! Found a real dof
+         if (int(flag(jj,e)).eq.re.and.dmask((e-1)*nxyz+jj,1).ne.0) 
+     $   then 
+            j = j+1
+            flag(jj,e) = j
+         else
+            flag(jj,e) = 0
+         endif
+      enddo
+      enddo
+
+      write(filename1,'(a,i0,a)') 'Jacobian1_',pstep,'.dat'        
+      open(50,file=filename1)                                      
+      j = 0
+      do e=1,nelv
+      do jj=1,nxyz
+
+         do ic = 1,ncdim                                               
+            call rzero(p(1,ic),nn)                                   
+         enddo                                                         
+
+         if (int(flag(jj,e)).ne.0) then  ! Next column of identity
+            j=j+1
+            p((e-1)*nxyz+jj,1) = 1                                    
+            call dssum  (p(1,1) ,nx1,ny1,nz1) ! Copy "1" to all elements
+            call col2   (p(1,1),mult,nn) ! do the average
+
+            do ic = 1,ncdim                             
+               do ii=1,nn
+                  c_out(ii,ic) = c_in(ii,ic)+pert*p(ii,ic)
+               enddo
+c              call add3s2(c_out(1,ic),c_in(1,ic),p(1,ic),1.0,pert,nn) 
+            enddo                                                     
+
+            call compute_f_couple(ff,c_out,nn)                      
+            do ic = 1,ncdim                                           
+               call sub3(fdiff(1,ic),ff(1,ic),fi(1,ic),nn)          
+            enddo                                                     
+            do ii=1,nn
+               J_out(ii,1) = invtau*p(ii,1)-pertinv*fdiff(ii,1)
+            enddo
+c           call add3s2(J_out(1,1),p(1,1),fdiff(1,1),invtau,          
+c    $           -pertinv,nn)                                      
+            call dssum  (J_out(1,1),nx1,ny1,nz1) ! Copy "1" to all elements
+
+c           Now, output the "j"th column of A
+            
+
+            i = 0
+            do ee=1,nelv
+            do ii=1,nxyz
+               if (int(flag(ii,ee)).ne.0) then 
+                  write(50,77)J_out((e-1)*nxyz+ii,1)
+               endif
+            enddo
+            enddo
+         endif
+
+      enddo
+      enddo
+
+      write(filename2,'(a,i0,a)') 'Jacobian2_',pstep,'.dat'        
+      open(50,file=filename2)                                      
+      j = 0
+      do e=1,nelv
+      do jj=1,nxyz
+
+         do ic = 1,ncdim                                               
+            call rzero(p(1,ic),nn)                                   
+         enddo                                                         
+
+         if (int(flag(jj,e)).ne.0) then  ! Next column of identity
+            j=j+1
+            p((e-1)*nxyz+jj,2) = 1                                                    
+            call dssum  (p(1,2) ,nx1,ny1,nz1) ! Copy "1" to all elements
+            call col2   (p(1,2),mult,nn) ! do the average
+            do ic = 1,ncdim                             
+               do ii=1,nn
+                  c_out(ii,ic) = c_in(ii,ic)+pert*p(ii,ic)
+               enddo
+c              call add3s2(c_out(1,ic),c_in(1,ic),p(1,ic),1.0,pert,nn) 
+            enddo                                                     
+
+            call compute_f_couple(ff,c_out,nn)                      
+            do ic = 1,ncdim                                           
+               call sub3(fdiff(1,ic),ff(1,ic),fi(1,ic),nn)          
+            enddo                                                     
+            do ii=1,nn
+               J_out(ii,2) = invtau*p(ii,2)-pertinv*fdiff(ii,2)
+            enddo
+c           call add3s2(J_out(1,2),p(1,2),fdiff(1,2),invtau,          
+c    $           -pertinv,nn)                                      
+            call dssum  (J_out(1,2),nx1,ny1,nz1) ! Copy "1" to all elements
+
+c           Now, output the "j"th column of A
+            
+
+            i = 0
+            do ee=1,nelv
+            do ii=1,nxyz
+               if (int(flag(ii,ee)).ne.0) then 
+                  write(50,77)J_out((e-1)*nxyz+ii,2)
+               endif
+   77          format(e24.15)
+            enddo
+            enddo
+         endif
+
+      enddo
+      enddo
+      end
