@@ -43,7 +43,7 @@ c     Set default ParamNT
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
         jaceps    = 1e-5     ! perturbation parameter for Jacobi-free
-        dt_const  = 1e-4     ! constant c for the formula dt = c * dtNT
+        dt_const  = 1        ! constant c for the formula dt = c * dtNT
                              ! c = 1, 0.1, 0.01, 0.001, 0.0001
                              ! c = 0.0001 is the best case up to now
 
@@ -171,7 +171,8 @@ c       determine dtNT, dt
         call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
         dtinv = 1./dt
         
-        if (mod(istep,5).eq.0) then
+c       if (mod(istep,10).eq.0) then
+        if (istep.le.15)then
                 call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
         endif
 
@@ -236,6 +237,10 @@ c          if (rnorm.lt.new_tol) goto 900
         enddo
  90     format('newton iter',2i6,1p6e12.4)   
 900     continue
+
+c       if (mod(istep,5).eq.0) then
+c               call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
+c       endif
 
         do ic = 1,lcdim
           call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
@@ -1351,6 +1356,7 @@ c-----------------------------------------------------------------------
       write(filename1,'(a,i0,a)') 'Jacobian1_',pstep,'.dat'        
       open(50,file=filename1)                                      
       j = 0
+      write(6,*)'check degree',(nelv-1)*nxyz+nxyz,nn
       do e=1,nelv
       do jj=1,nxyz
 
@@ -1389,7 +1395,7 @@ c           Now, output the "j"th column of A
             do ee=1,nelv
             do ii=1,nxyz
                if (int(flag(ii,ee)).ne.0) then 
-                  write(50,77)J_out((e-1)*nxyz+ii,1)
+                  write(50,77)J_out((ee-1)*nxyz+ii,1)
                endif
             enddo
             enddo
@@ -1438,7 +1444,7 @@ c           Now, output the "j"th column of A
             do ee=1,nelv
             do ii=1,nxyz
                if (int(flag(ii,ee)).ne.0) then 
-                  write(50,77)J_out((e-1)*nxyz+ii,2)
+                  write(50,77)J_out((ee-1)*nxyz+ii,2)
                endif
    77          format(e24.15)
             enddo
