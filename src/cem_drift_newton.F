@@ -36,14 +36,14 @@ c     Set default ParamNT
         dtNT = param(1)      ! pseudo-transient time step
                              ! it can grow as istep increase 
 
-        ifsep     = 0        ! 0=couple, 1=separate, Lan
+        ifsep     = 0        ! -1=fully couple, 0=couple, 1=separate
         inexactNT_flag = 0   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
         dt_flag   = 1        ! 0: fixed dt  1: dt = const * dtNT
         dtNT_flag = 2        ! 1: dtNT=c*dtNT  2:SER  -2:SER + constraint
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
         jaceps    = 1e-5     ! perturbation parameter for Jacobi-free
-        dt_const  = 1        ! constant c for the formula dt = c * dtNT
+        dt_const  = 1e-4     ! constant c for the formula dt = c * dtNT
                              ! c = 1, 0.1, 0.01, 0.001, 0.0001
                              ! c = 0.0001 is the best case up to now
 
@@ -160,21 +160,22 @@ c     Start pseudo-time step
         cpu_dtime = dclock()
 
 c       determine dtNT, dt
-        if ((istep .eq. 1)) then
+        if ((istep.eq.1)) then
           dtNT = param(1)
         else
           call get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
         endif
         dtNTinv = 1./dtNT
 
-        call compute_cfl(npts)
         call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
         dtinv = 1./dt
+
+        call compute_cfl(npts)
         
 c       if (mod(istep,10).eq.0) then
-        if (istep.le.15)then
-                call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
-        endif
+c       if (istep.le.15)then
+c               call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
+c       endif
 
 
 c       Start Newton iteration
