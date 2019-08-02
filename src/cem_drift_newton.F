@@ -233,15 +233,10 @@ c         check rel. update step size of NT to avoid stalling
      $       istep,iterNT,ratio,rnorm,rinorm,dtNT,dt,NTstep_norm
 
           if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
-c          if (rnorm.lt.new_tol) goto 900
 
         enddo
  90     format('newton iter',2i6,1p6e12.4)   
 900     continue
-
-c       if (mod(istep,5).eq.0) then
-c               call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
-c       endif
 
         do ic = 1,lcdim
           call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
@@ -258,12 +253,12 @@ c       compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
         fnorm  = glmax(fnorms,lcdim)
         f_pre = f_now  ! set up old fnorm to f_pre
         f_now = fnorm  ! set up new fnorm to f_now
+
         if (nid.eq.0) write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
         if (nid.eq.0) write(6,*)istep,iterNT,ratio,rnorm,rinorm,
      $                       NTstep_norm,'gnorm'
         if (nid.eq.0) write(6,*)istep,iterNT,dtNT,dt,'dtNT'
 
-        
 c       compute the CPU_time
         cpu_dtime = dclock()-cpu_dtime
         cpu_t = cpu_t+cpu_dtime
@@ -272,8 +267,6 @@ c       compute the CPU_time
         
         time = time + dtNT
     
-c        call compute_energy
-
         cpu_chk = dclock()
         call userchk
         cpu_chk = dclock()-cpu_chk
@@ -330,11 +323,12 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
       include 'DRIFT' !lcdim
       include 'NEWTON'
+
       integer n,ic
-      real g_out(lpts1,lcdim)
-     $   , ck  (lpts1,lcdim)
-     $   , c0  (lpts1,lcdim)
-     $   , f   (lpts1,lcdim)
+      real g_out(lpts1,lcdim),
+     $     ck   (lpts1,lcdim),
+     $     c0   (lpts1,lcdim),
+     $     f    (lpts1,lcdim)
 
       do ic = 1,lcdim
         call add3s3(g_out(1,ic),ck(1,ic),f(1,ic),c0(1,ic)
@@ -430,19 +424,13 @@ c-----------------------------------------------------------------------
       unorm = sqrt(unorm)
 
       eps = (1+unorm)*1e-14   ! formula for varing eps
-      eps = sqrt(eps)         ! for using the case using 
-                              ! "ub" filled with previous
-                              !  step info first and 
-                              !  Dirichlet info on the boundary
-      eps = eps/pnorm         ! this eps will blow up because of 
-                              ! pnorm = 0
+      eps = sqrt(eps)         
+c     for using the case using "ub" filled with previous
+c     step info first and Dirichlet info on the boundary 
+c     this eps will blow up because of pnorm = 0 
+      eps = eps/pnorm  
       epsinv = 1./eps         
 
-c     if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) then
-c         write(6,10) istep,newton_iter,eps,epsinv
-c     endif
-
-c 10  format (2i8,' eps=',1p2e17.7)
       do ic = 1,lcdim
         call copy(uep(1,ic),uc(1,ic),n)
       enddo
@@ -458,8 +446,8 @@ c 10  format (2i8,' eps=',1p2e17.7)
 
       call cmult  (foi,epsinv*dtNT,n) ! foi = (fo-fi)*dt_newton/eps
       call sub3   (Jp,p,foi,n)
-      call cmult  (Jp,dtNTinv,n)     ! Jp = p/dt_newton - (fo-f)/eps
-                                             ! case with divided by dt_newton
+      call cmult  (Jp,dtNTinv,n)      ! Jp = p/dt_newton - (fo-f)/eps
+                                      ! case with divided by dt_newton
       return
       end
 c-----------------------------------------------------------------------
@@ -498,11 +486,6 @@ c-----------------------------------------------------------------------
         epssinv(ic) = 1./epss(ic)
       enddo
 
-c     if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) then
-c         write(6,10) istep,newton_iter,eps,epsinv
-c     endif
-
-c 10  format (2i8,' eps=',1p2e17.7)
       do ic = 1,lcdim
         call add3s2 (uep(1,ic),uc(1,ic),p(1,ic),1.0,epss(ic),n) ! uep = u + eps*p
       enddo
@@ -531,8 +514,6 @@ c     GMRES iteration.
       include 'NEWTON'
       include 'NGMRES'
 
-
-
       integer  n,noin,outer,iflag,isep
       real     phi(lpts1),res(lpts1),wt(lpts1)
       real     res_out,forcing,tol,alpha,l,temp
@@ -559,28 +540,27 @@ c      tolpss= tolps
       do while (iconv.eq.0.and.iter.lt.500)
          outer = outer+1
          if(iter.eq.0) then
-            call copy  (r_NT,res,n)                  ! r = res
+            call copy  (r_NT,res,n) ! r = res
          else
             !update residual
-            call copy   (r_NT,res,n)                  ! r = res
+            call copy   (r_NT,res,n) ! r = res
             call JacobiMatVec(w_NT,x_NT,uc,f,n,iflag,isep)! w = A x
             call add2s2 (r_NT,w_NT,-1.,n) ! r = r - w
          endif
 
-         gamma_NT(1) = glsc3(r_NT,r_NT,wt,n)                ! gamma  = (r,r)
-         gamma_NT(1) = sqrt(gamma_NT(1))                 ! gamma  = sqrt{ (r,r) }
+         gamma_NT(1) = glsc3(r_NT,r_NT,wt,n) ! gamma  = (r,r)
+         gamma_NT(1) = sqrt(gamma_NT(1))     ! gamma  = sqrt{ (r,r) }
 
          tolps = forcing*gamma_NT(1)  ! tolerance for gmres                   
          tolpss = tolps        ! by using inexact Newton method
                                ! 0.1 for forcing term and is changable
 
-         !check for lucky convergence
+         ! check for lucky convergence
          rnorm = 0.
-         if(gamma_NT(1) .eq. 0.) goto 9000
+         if(gamma_NT(1).eq.0.) goto 9000
          temp = 1./gamma_NT(1)
-         call cmult2(v_NT(1,1),r_NT,temp,n)             !  v  = r / gamma
-                                                  !  1            1
-         !write(6,*) 'start form m-th krylov subspace'
+         call cmult2(v_NT(1,1),r_NT,temp,n) ! v  = r / gamma
+                                            !  1            1
          do j=1,m
             iter = iter+1
 
@@ -589,9 +569,9 @@ c      tolpss= tolps
             !modified Gram-Schmidt
             do i=1,j
                h_NT(i,j)=glsc3(w_NT,v_NT(1,i),wt,n)        ! h    = (w,v )
-                                                  ! i,j       i
+                                                           ! i,j       i
                call add2s2(w_NT,v_NT(1,i),-h_NT(i,j),n)    ! w = w - h    v
-            enddo                                 !         i,j  i
+            enddo                                          !         i,j  i
 
 
             !apply Givens rotations to new column
@@ -600,7 +580,7 @@ c      tolpss= tolps
                h_NT(i  ,j)=  c_NT(i)*temp + s_NT(i)*h_NT(i+1,j)
                h_NT(i+1,j)= -s_NT(i)*temp + c_NT(i)*h_NT(i+1,j)
             enddo
-                                              !            ______
+                                                    !            ______
             alpha = sqrt(glsc3(w_NT,w_NT,wt,n))     ! alpha =  \/ (w,w)
             if(alpha.eq.0.) goto 900 !converged
             l = sqrt(h_NT(j,j)*h_NT(j,j)+alpha*alpha)
@@ -622,9 +602,8 @@ c     $           write (6,66) iter,tolpss,rnorm,istep
 
             temp = 1./alpha
             call cmult2(v_NT(1,j+1),w_NT,temp,n)   ! v    = w / alpha
-                                             !  j+1
+                                                   !  j+1
          enddo
-c        write(6,*) 'end of forming m-th krylov subspace'
   900    iconv = 1
          res_out = rnorm   ! output |Ax-b|
          if (nid.eq.0) write(6,*) istep,iterNT,
@@ -646,7 +625,6 @@ c        write(6,*) 'start solving least squre problem'
          do i=1,j
             call add2s2(x_NT,v_NT(1,i),c_NT(i),n)     ! x = x + c  z
          enddo                               !          i  i
-c     write(6,*) 'end of solving least squre problem'
       enddo
  9000 continue
 
@@ -942,7 +920,7 @@ c-----------------------------------------------------------------------
       real const, ratio
       integer iflag
 
-      if (iflag.eq.1) then     ! fixed ratio
+      if (iflag.eq.1) then ! fixed ratio
 
         dtNT = dtNT * 10
 
@@ -983,7 +961,7 @@ c-----------------------------------------------------------------------
       integer iflag
 
       if (iflag.eq.0) then
-        ! do nothing and use original dt
+c     do nothing and use original dt
       elseif (iflag.eq.1) then
         dt = dtNT * const
       endif
@@ -1217,7 +1195,6 @@ c-----------------------------------------------------------------------
       write(6,*)'====================='     
 
       call compute_f_couple(fi,c_in,nn)   
-
 
       k1 = 0                                
       do j=1,nn                           
