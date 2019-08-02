@@ -1,0 +1,9 @@
+      common /gmresNT_fc/ x_NT(lx1*ly1*lz1*lelv,LDIMT-1),
+     $                    r_NT(lx1*ly1*lz1*lelv,LDIMT-1),
+     $                    w_NT(lx1*ly1*lz1*lelv,LDIMT-1),
+     $                    h_NT(lgmres,lgmres), gamma_NT(lgmres+1),
+     $                    c_NT(lgmres),s_NT(lgmres)
+      common /gmreNT1_fc/ v_NT(lx1*ly1*lz1*lelv,LDIMT-1,lgmres)
+      common /gmreNT2_fc/ z_NT(lx1*ly1*lz1*lelv,LDIMT-1,lgmres)
+      real x_NT,r_NT,w_NT,h_NT,gamma_NT,c_NT,s_NT,v_NT,z_NT
+
