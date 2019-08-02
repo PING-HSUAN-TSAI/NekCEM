@@ -43,7 +43,7 @@ c     Set default ParamNT
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
         jaceps    = 1e-5     ! perturbation parameter for Jacobi-free
-        dt_const  = 1e-4     ! constant c for the formula dt = c * dtNT
+        dt_const  = 1        ! constant c for the formula dt = c * dtNT
                              ! c = 1, 0.1, 0.01, 0.001, 0.0001
                              ! c = 0.0001 is the best case up to now
 
