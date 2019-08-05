@@ -43,7 +43,7 @@ c     Set default ParamNT
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
         jaceps    = 1e-5     ! perturbation parameter for Jacobi-free
-        dt_const  = 1        ! constant c for the formula dt = c * dtNT
+        dt_const  = 1e-4     ! constant c for the formula dt = c * dtNT
                              ! c = 1, 0.1, 0.01, 0.001, 0.0001
                              ! c = 0.0001 is the best case up to now
 
@@ -127,22 +127,17 @@ c     compute initials
 
       call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
       dtinv = 1./dt
-      dtNTinv = 1./dtNT
       
       do ic = 1,lcdim
-        call copy (cn_k(1,ic),cN(1,ic),npts) ! get the initial condition
-        call copy (c_k0(1,ic),cn_k(1,ic),npts)
+         call copy (cn_k(1,ic),cN(1,ic),npts) ! get the initial condition
+         call copy (c_k0(1,ic),cn_k(1,ic),npts)
       enddo
 
       call compute_f_couple(fn,cn_k,npts)
-      call compute_gk(gn_n,fn,cn_k,c_k0,npts) ! compute rhs g_k for GMRES
-      do ic = 1,lcdim
-        call chsign (gn_n(1,ic),npts)
-      enddo
 
       do ic = 1,lcdim
-        fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)
-        fnorms(ic) = sqrt(fnorms(ic))
+         fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)
+         fnorms(ic) = sqrt(fnorms(ic))
       enddo
       fnorm = glmax(fnorms,lcdim)
       f_now = fnorm
