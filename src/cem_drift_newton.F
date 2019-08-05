@@ -76,6 +76,7 @@ c-----------------------------------------------------------------------
       real rinorm,rinorms(lcdim),ratio
       real fnorm,fnorms(lcdim)
       real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim),NTstep_norm
+      real norm_ck0,norm_sk
       real temp(lpts1)
 
       integer i,j,k,n,ic
@@ -181,10 +182,13 @@ c        endif
 c        Start Newton iteration
          do iterNT=1,maxit
 
+            norm_ck0 = 0.
             do ic = 1,lcdim
                norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
-               norms_ck0(ic) = sqrt(norms_ck0(ic))
+c              norms_ck0(ic) = sqrt(norms_ck0(ic))
+               norm_ck0 = norm_ck0 + norms_ck0(ic)
             enddo
+            norm_ck0 = sqrt(norm_ck0)
 
 c           determine inexactNT
             do ic = 1,lcdim
@@ -212,23 +216,32 @@ c     $           ,mult,lcdim,npts,tolGMRES)
                call chsign(gn_n(1,ic),npts)
             enddo
 
+            rnorm = 0.
             do ic = 1,lcdim
                rnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
-               rnorms(ic) = sqrt(rnorms(ic))
+               rnorm = rnorm + rnorms(ic)
+c              rnorms(ic) = sqrt(rnorms(ic))
             enddo
-            rnorm = glmax(rnorms,lcdim)
+            rnorm = sqrt(rnorm)
+c           rnorm = glmax(rnorms,lcdim)
 
-            if (iterNT.eq.1) rinorm=rnorm
-            if (nid.eq.0) write(6,*)'rinorm',rinorm
+            if (iterNT.eq.1) then
+               rinorm=rnorm
+               if (nid.eq.0) write(6,*)istep,iterNT,rinorm,'rinorm'
+            endif
             ratio=rnorm/rinorm 
 
 c           check rel. update step size of NT to avoid stalling
+            norm_sk = 0.
             do ic = 1,lcdim
                norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
-               norms_sk(ic) = sqrt(norms_sk(ic))
-               sk_ratio(ic) = norms_sk(ic) / norms_ck0(ic)
+               norm_sk = norm_sk + norms_sk(ic)
+c              norms_sk(ic) = sqrt(norms_sk(ic))
+c              sk_ratio(ic) = norms_sk(ic) / norms_ck0(ic)
             enddo
-            NTstep_norm = glmax(sk_ratio,lcdim)
+            norm_sk = sqrt(norm_sk)
+c           NTstep_norm = glmax(sk_ratio,lcdim)
+            NTstep_norm = norm_sk/norm_ck0
 
             if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
      $         istep,iterNT,ratio,rnorm,rinorm,dtNT,dt,NTstep_norm
