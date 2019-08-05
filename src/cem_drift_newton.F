@@ -122,7 +122,6 @@ c     the initial step
 
       if (nsteps.eq.0) call cem_end
 
-
 c     compute initials
       epsinv = 1./jaceps   ! eps for approximation for jacobian
 
@@ -152,154 +151,158 @@ c     Start timer
       cpu_t = 0.0
       cpu_chk = 0.0
 
-
 c     Start pseudo-time step
       istep = ifirst
       do while(.true.)
 
-        cpu_dtime = dclock()
+         cpu_dtime = dclock()
 
-c       determine dtNT, dt
-        if ((istep.eq.1)) then
-          dtNT = param(1)
-        else
-          call get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
-        endif
-        dtNTinv = 1./dtNT
+c        determine dtNT, dt
+         if ((istep.eq.1)) then
+            dtNT = param(1)
+         else
+            call get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
+         endif
+         dtNTinv = 1./dtNT
 
-        call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
-        dtinv = 1./dt
+         call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
+         dtinv = 1./dt
 
-        call compute_cfl(npts)
+         call compute_cfl(npts)
+         call compute_gk(gn_n,fn,cn_k,c_k0,npts) ! compute rhs g_k for GMRES
+         do ic = 1,lcdim
+            call chsign (gn_n(1,ic),npts)
+         enddo
         
-c       if (mod(istep,10).eq.0) then
-c       if (istep.le.15)then
-c               call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
-c       endif
+c        if (mod(istep,10).eq.0) then
+c        if (istep.le.15)then
+c           call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
+c        endif
 
 
-c       Start Newton iteration
-        do iterNT=1,maxit
+c        Start Newton iteration
+         do iterNT=1,maxit
 
-          do ic = 1,lcdim
-            norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
-            norms_ck0(ic) = sqrt(norms_ck0(ic))
-          enddo
-
-c        determine inexactNT
-          do ic = 1,lcdim
-            call get_inexactNT(inexactNT(ic),rnorms(ic),rnorms_pre(ic)
-     $                        ,res_gmres(ic),iterNT,inexactNT_flag)
-          enddo
-
-          if (ifsteric) then
-c            call drift_hmh_gmres_NTsteric(sn_k,gn_n,cn_k,fn
-c     $           ,mult,lcdim,npts,tolGMRES)
-          else
             do ic = 1,lcdim
-              call drift_hmh_gmres_newton(sn_k(1,ic),gn_n(1,ic)
-     $             ,cn_k,fn(1,ic),mult,lcdim,npts
-     $             ,res_gmres(ic),inexactNT(ic),ic,ifsep)
+               norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
+               norms_ck0(ic) = sqrt(norms_ck0(ic))
             enddo
-          endif
-          do ic = 1,lcdim
-            call add2s2(cn_k(1,ic),sn_k(1,ic),alphaNT,npts) ! cp_k=cp_k+alpha*sp_k
-          enddo
 
-          call compute_f_couple(fn,cn_k,npts)
-          call compute_gk(gn_n,fn,cn_k,c_k0,npts)  ! checking tol. + next NT iter
-          do ic = 1,lcdim
-            call chsign(gn_n(1,ic),npts)
-          enddo
+c           determine inexactNT
+            do ic = 1,lcdim
+               call get_inexactNT(inexactNT(ic),rnorms(ic),
+     $         rnorms_pre(ic),res_gmres(ic),iterNT,inexactNT_flag)
+            enddo
 
-          do ic = 1,lcdim
-            rnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
-            rnorms(ic) = sqrt(rnorms(ic))
-          enddo
-          rnorm = glmax(rnorms,lcdim)
-          if (iterNT.eq.1) rinorm=rnorm
-          if (nid.eq.0) write(6,*)'rinorm',rinorm
-          ratio=rnorm/rinorm 
-
-c         check rel. update step size of NT to avoid stalling
-          do ic = 1,lcdim
-            norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
-            norms_sk(ic) = sqrt(norms_sk(ic))
-            sk_ratio(ic) = norms_sk(ic) / norms_ck0(ic)
-          enddo
-          NTstep_norm = glmax(sk_ratio,lcdim)
-
-          if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
-     $       istep,iterNT,ratio,rnorm,rinorm,dtNT,dt,NTstep_norm
-
-          if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
-
-        enddo
- 90     format('newton iter',2i6,1p6e12.4)   
-900     continue
-
-        do ic = 1,lcdim
-          call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
-        enddo                           ! for next pseudo-time step
-        do ic = 1,lcdim
-          call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
-        enddo
-
-c       compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
-        do ic = 1,lcdim
-          fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)  
-          fnorms(ic) = sqrt(fnorms(ic))
-        enddo
-        fnorm  = glmax(fnorms,lcdim)
-        f_pre = f_now  ! set up old fnorm to f_pre
-        f_now = fnorm  ! set up new fnorm to f_now
-
-        if (nid.eq.0) write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
-        if (nid.eq.0) write(6,*)istep,iterNT,ratio,rnorm,rinorm,
-     $                       NTstep_norm,'gnorm'
-        if (nid.eq.0) write(6,*)istep,iterNT,dtNT,dt,'dtNT'
-
-c       compute the CPU_time
-        cpu_dtime = dclock()-cpu_dtime
-        cpu_t = cpu_t+cpu_dtime
-        cpu_t_step = cpu_t/istep
-        cpu_p_t = glsum(cpu_t_step /npts,1)/np
-        
-        time = time + dtNT
-    
-        cpu_chk = dclock()
-        call userchk
-        cpu_chk = dclock()-cpu_chk
-
-        call cem_out
-
-        if (nid.eq.0.AND.mod(istep,iocomm).eq.0) then ! conut #BDF1
-          write(6,*)'newton BDFcnt: istep = ',istep
-          write(6,*)'newton BDFcnt: #Poisson solver = ',BDFcnt(1)
-          do ic = 1,lcdim
-            write(6,991)ic,BDFcnt(ic+1)
-          enddo
-        endif
-
-        if (irestart.gt.0) then ! write newton.restart
-          if (mod(istep,irestart).eq.0) then
-            if (nid.eq.0) then
-              write(6,*)'Writing newton.restart! at istep=',istep
-              call write_paramNT
-
+            if (ifsteric) then
+c              call drift_hmh_gmres_NTsteric(sn_k,gn_n,cn_k,fn
+c     $           ,mult,lcdim,npts,tolGMRES)
+            else
+               do ic = 1,lcdim
+                  call drift_hmh_gmres_newton(sn_k(1,ic),gn_n(1,ic)
+     $               ,cn_k,fn(1,ic),mult,lcdim,npts
+     $               ,res_gmres(ic),inexactNT(ic),ic,ifsep)
+               enddo
             endif
-          endif
-        endif 
+            do ic = 1,lcdim
+               call add2s2(cn_k(1,ic),sn_k(1,ic),alphaNT,npts) ! cp_k=cp_k+alpha*sp_k
+            enddo
 
-        istep = istep+1
-        if (lastep.eq.1) goto 901
-        if (usesteps) then
-          if (istep.gt.ilast) goto 901
-        else
-          if (time.ge.fintim) goto 901
-        endif
+            call compute_f_couple(fn,cn_k,npts)
+            call compute_gk(gn_n,fn,cn_k,c_k0,npts)  ! checking tol. + next NT iter
+            do ic = 1,lcdim
+               call chsign(gn_n(1,ic),npts)
+            enddo
 
-      enddo
+            do ic = 1,lcdim
+               rnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
+               rnorms(ic) = sqrt(rnorms(ic))
+            enddo
+            rnorm = glmax(rnorms,lcdim)
+
+            if (iterNT.eq.1) rinorm=rnorm
+            if (nid.eq.0) write(6,*)'rinorm',rinorm
+            ratio=rnorm/rinorm 
+
+c           check rel. update step size of NT to avoid stalling
+            do ic = 1,lcdim
+               norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
+               norms_sk(ic) = sqrt(norms_sk(ic))
+               sk_ratio(ic) = norms_sk(ic) / norms_ck0(ic)
+            enddo
+            NTstep_norm = glmax(sk_ratio,lcdim)
+
+            if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
+     $         istep,iterNT,ratio,rnorm,rinorm,dtNT,dt,NTstep_norm
+
+            if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
+
+         enddo ! newton iteration
+ 90      format('newton iter',2i6,1p6e12.4)   
+900      continue
+
+         do ic = 1,lcdim
+            call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
+         enddo                           
+c        for next pseudo-time step
+         do ic = 1,lcdim
+            call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
+         enddo
+
+c        compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
+         do ic = 1,lcdim
+            fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)  
+            fnorms(ic) = sqrt(fnorms(ic))
+         enddo
+         fnorm  = glmax(fnorms,lcdim)
+         f_pre = f_now  ! set up old fnorm to f_pre
+         f_now = fnorm  ! set up new fnorm to f_now
+
+         if (nid.eq.0) write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
+         if (nid.eq.0) write(6,*)istep,iterNT,ratio,rnorm,rinorm,
+     $                        NTstep_norm,'gnorm'
+         if (nid.eq.0) write(6,*)istep,iterNT,dtNT,dt,'dtNT'
+
+c        compute the CPU_time
+         cpu_dtime = dclock()-cpu_dtime
+         cpu_t = cpu_t+cpu_dtime
+         cpu_t_step = cpu_t/istep
+         cpu_p_t = glsum(cpu_t_step /npts,1)/np
+        
+         time = time + dtNT
+    
+         cpu_chk = dclock()
+         call userchk
+         cpu_chk = dclock()-cpu_chk
+
+         call cem_out
+
+         if (nid.eq.0.AND.mod(istep,iocomm).eq.0) then ! conut #BDF1
+            write(6,*)'newton BDFcnt: istep = ',istep
+            write(6,*)'newton BDFcnt: #Poisson solver = ',BDFcnt(1)
+            do ic = 1,lcdim
+               write(6,991)ic,BDFcnt(ic+1)
+            enddo
+         endif
+
+         if (irestart.gt.0) then ! write newton.restart
+            if (mod(istep,irestart).eq.0) then
+               if (nid.eq.0) then
+                  write(6,*)'Writing newton.restart! at istep=',istep
+                  call write_paramNT
+               endif
+            endif
+         endif 
+
+         istep = istep+1
+         if (lastep.eq.1) goto 901
+         if (usesteps) then
+            if (istep.gt.ilast) goto 901
+         else
+            if (time.ge.fintim) goto 901
+         endif
+
+      enddo ! pseudo-time step
 
   901 continue
   991 format(' newton BDFcnt: #cN',I2,' solver = ',i10)
