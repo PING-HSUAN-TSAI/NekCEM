@@ -164,6 +164,8 @@ c        determine dtNT, dt
          dtinv = 1./dt
 
          call compute_cfl(npts)
+
+         if (dt_flag.ne.0) call compute_f_couple(fn,c_k0,npts) ! update f_k0 if dt changed
          call compute_gk(gn_n,fn,cn_k,c_k0,npts) ! compute rhs g_k for GMRES
          do ic = 1,lcdim
             call chsign (gn_n(1,ic),npts)
@@ -329,9 +331,9 @@ c-----------------------------------------------------------------------
      $     f    (lpts1,lcdim)
 
       do ic = 1,lcdim
-        call add3s3(g_out(1,ic),ck(1,ic),f(1,ic),c0(1,ic)
-     $       ,1.0,-1.0*dtNT,-1.0,n)
-        call cmult(g_out(1,ic),dtNTinv,n)   ! case with divided by dt_newton
+         call add3s3(g_out(1,ic),ck(1,ic),f(1,ic),c0(1,ic)
+     $              ,1.0,-1.0*dtNT,-1.0,n)
+         call cmult(g_out(1,ic),dtNTinv,n) ! case with divided by dt_newton
       enddo
 
       return
@@ -384,8 +386,8 @@ c-----------------------------------------------------------------------
       call cem_drift_sem_bdf1_newton(c_in,c_out,n,0)
 
       do ic = 1,lcdim
-        call sub3(f_out(1,ic),c_out(1,ic),c_in(1,ic),n)
-        call cmult(f_out(1,ic),dtinv,n)
+         call sub3(f_out(1,ic),c_out(1,ic),c_in(1,ic),n)
+         call cmult(f_out(1,ic),dtinv,n)
       enddo
 
       return
@@ -430,15 +432,16 @@ c     this eps will blow up because of pnorm = 0
       epsinv = 1./eps         
 
       do ic = 1,lcdim
-        call copy(uep(1,ic),uc(1,ic),n)
+         call copy(uep(1,ic),uc(1,ic),n)
       enddo
       call add3s2 (uep(1,iflag),uc(1,iflag),p,1.0,eps,n) ! uep = u + eps*p
+
       if (isep.eq.0) then
-        call compute_f_couple(fon,uep,n)
+         call compute_f_couple(fon,uep,n)
       else
-        do ic = 1,lcdim
-          call compute_f_sep(fon(1,ic),uep,ic,n)
-        enddo
+         do ic = 1,lcdim
+            call compute_f_sep(fon(1,ic),uep,ic,n)
+         enddo
       endif
       call sub3   (foi,fon(1,iflag),fi,n)
 
@@ -470,31 +473,31 @@ c-----------------------------------------------------------------------
 
       n = lx1*ly1*lz1*nelt
       do ic = 1,lcdim
-        pnorms(ic) = glsc3(p(1,ic),p(1,ic),mult,n)
-        unorms(ic) = glsc3(uc(1,ic),uc(1,ic),mult,n)
-        pnorms(ic) = sqrt(pnorms(ic))
-        unorms(ic) = sqrt(unorms(ic))
-        epss(ic) = (1+unorms(ic))*1e-14   ! formula for varing eps
-        epss(ic) = sqrt(epss(ic))         ! for using the case using 
-                                          ! "ub" filled with previous
-                                    !  step info first and 
-                                    !  Dirichlet info on the boundary
-        epss(ic) = epss(ic)/pnorms(ic)! this eps will blow up because of 
+         pnorms(ic) = glsc3(p(1,ic),p(1,ic),mult,n)
+         unorms(ic) = glsc3(uc(1,ic),uc(1,ic),mult,n)
+         pnorms(ic) = sqrt(pnorms(ic))
+         unorms(ic) = sqrt(unorms(ic))
+         epss(ic) = (1+unorms(ic))*1e-14 ! formula for varing eps
+         epss(ic) = sqrt(epss(ic))       ! for using the case using 
+                                         ! "ub" filled with previous
+                                         ! step info first and 
+                                         ! Dirichlet info on the boundary
+         epss(ic) = epss(ic)/pnorms(ic)! this eps will blow up because of 
                                     ! pnorm = 0
-        epssinv(ic) = 1./epss(ic)
+         epssinv(ic) = 1./epss(ic)
       enddo
 
       do ic = 1,lcdim
-        call add3s2 (uep(1,ic),uc(1,ic),p(1,ic),1.0,epss(ic),n) ! uep = u + eps*p
+         call add3s2 (uep(1,ic),uc(1,ic),p(1,ic),1.0,epss(ic),n) ! uep = u + eps*p
       enddo
 
       call compute_f_couple(fon,uep,n)
 
       do ic = 1,lcdim
-        call sub3   (foi(1,ic),fon(1,ic),fi(1,ic),n)
-        call cmult  (foi(1,ic),epssinv(ic)*dtNT,n) ! foi = (fo-fi)*dt_newton/eps
-        call sub3   (Jp(1,ic),p(1,ic),foi(1,ic),n)
-        call cmult  (Jp(1,ic),dtNTinv,n)     ! Jp = p/dt_newton - (fo-f)/eps
+         call sub3   (foi(1,ic),fon(1,ic),fi(1,ic),n)
+         call cmult  (foi(1,ic),epssinv(ic)*dtNT,n) ! foi = (fo-fi)*dt_newton/eps
+         call sub3   (Jp(1,ic),p(1,ic),foi(1,ic),n)
+         call cmult  (Jp(1,ic),dtNTinv,n)     ! Jp = p/dt_newton - (fo-f)/eps
       enddo                                             ! case with divided by dt_newton
       return
       end
@@ -837,25 +840,26 @@ c---------------------------------------------------------------------
       real coutput(lpts1,lcdim)
 
       do ic = 1,lcdim
-        call copy(cN(1,ic),cinput(1,ic),n)
+         call copy(cN(1,ic),cinput(1,ic),n)
       enddo
-      if (iflag.eq.0) then ! coupling every thing
-        call cem_drift_op_bdf
-        do ic = 1,lcdim+1
-          BDFcnt(ic) = BDFcnt(ic) + 1
-        enddo
-      else ! seperate
-        call cem_drift_source
-        call cem_drift_poisson
-        call cem_drift_sem_bdf1_init
-        BDFcnt(1) = BDFcnt(1) + 1
 
-        call cem_drift_rhs_bdf1(iflag)
-        call cem_drift_lhs_bdf1(iflag)
-        BDFcnt(iflag+1) = BDFcnt(iflag+1) + 1
+      if (iflag.eq.0) then ! coupling every thing
+         call cem_drift_op_bdf
+         do ic = 1,lcdim+1
+            BDFcnt(ic) = BDFcnt(ic) + 1
+         enddo
+      else ! seperate
+         call cem_drift_source
+         call cem_drift_poisson
+         call cem_drift_sem_bdf1_init
+         BDFcnt(1) = BDFcnt(1) + 1
+
+         call cem_drift_rhs_bdf1(iflag)
+         call cem_drift_lhs_bdf1(iflag)
+         BDFcnt(iflag+1) = BDFcnt(iflag+1) + 1
       endif
       do ic = 1,lcdim
-        call copy(coutput(1,ic),cN(1,ic),n)
+         call copy(coutput(1,ic),cN(1,ic),n)
       enddo
 
       return
@@ -914,34 +918,35 @@ c     input: all, output: dtNT
       subroutine get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,iflag)
 c-----------------------------------------------------------------------
       implicit none
+
       real dtNT,max_dtNT,f_pre,f_now,min_ftol
       real const, ratio
       integer iflag
 
       if (iflag.eq.1) then ! fixed ratio
 
-        dtNT = dtNT * 10
+         dtNT = dtNT * 10
 
-      elseif (iflag.eq. 2) then ! SER
+      elseif (iflag.eq.2) then ! SER
 
-        if (f_now.lt.min_ftol) then
-          dtNT = max_dtNT
-        else
-          ratio= f_pre/ f_now
-          dtNT = dtNT * ratio
-        endif
+         if (f_now.lt.min_ftol) then
+            dtNT = max_dtNT
+         else
+            ratio= f_pre/ f_now
+            dtNT = dtNT * ratio
+         endif
 
       elseif (iflag.eq.-2) then ! SER with constraint
 
-        if (f_now.lt.min_ftol) then ! near steady state
-          dtNT = max_dtNT
-        else
-          ratio= f_pre/ f_now
-          if (ratio.gt.1E2) ratio = 1E2  ! max rate
+         if (f_now.lt.min_ftol) then ! near steady state
+            dtNT = max_dtNT
+         else
+            ratio= f_pre/ f_now
+            if (ratio.gt.1E2) ratio = 1E2  ! max rate
   
-          dtNT = dtNT * ratio
-          if (dtNT.lt.1E-4) dtNT = 1E-4  ! min control
-        endif
+            dtNT = dtNT * ratio
+            if (dtNT.lt.1E-4) dtNT = 1E-4  ! min control
+         endif
 
       endif
 
@@ -955,13 +960,14 @@ c     input: all, output: dt
       subroutine get_dt(dt,max_dt,dtNT,const,iflag)
 c-----------------------------------------------------------------------
       implicit none
+
       real dt,max_dt,dtNT,const
       integer iflag
 
       if (iflag.eq.0) then
 c     do nothing and use original dt
       elseif (iflag.eq.1) then
-        dt = dtNT * const
+         dt = dtNT * const
       endif
 
       if (dt.gt.max_dt) dt = max_dt
@@ -1014,35 +1020,36 @@ c     input: all, output: forcing, rnorm_pre
      $                        ,iterNT,flag)
 c------------------------------------------------------------------------
       implicit none
+
       real forcing,rnorm,rnorm_pre,res_gmres
       integer iterNT,flag
 
       if (flag.eq.0) then     ! fixed forcing term
 
-        forcing = 0.1         ! can be 0.1 0.01 0.001 0.0001
-        rnorm_pre = rnorm
+         forcing = 0.1         ! can be 0.1 0.01 0.001 0.0001
+         rnorm_pre = rnorm
 
       elseif (flag.eq.1) then ! update by the ratio of rnorm
 
-        if (iterNT.eq.1) then
-          forcing = 0.1
-        else 
-          if (rnorm/rnorm_pre.ge.1) then
+         if (iterNT.eq.1) then
             forcing = 0.1
-          else
-            forcing = rnorm/rnorm_pre
-          endif
-        endif
-        rnorm_pre = rnorm
+         else 
+            if (rnorm/rnorm_pre.ge.1) then
+               forcing = 0.1
+            else
+               forcing = rnorm/rnorm_pre
+            endif
+         endif
+         rnorm_pre = rnorm
 
       elseif (flag.eq.2) then ! update by relative change of rnorm and res_gmres
 
-        if (iterNT.eq.1) then
-          forcing = 0.1
-        else
-          forcing = abs(rnorm-res_gmres)/rnorm_pre
-        endif
-        rnorm_pre = rnorm
+         if (iterNT.eq.1) then
+            forcing = 0.1
+         else
+            forcing = abs(rnorm-res_gmres)/rnorm_pre
+         endif
+         rnorm_pre = rnorm
 
       endif
 
@@ -1065,8 +1072,8 @@ C     Read paramNT
       open(unit=11,file='newton.restart')
       nn = 0
       do i=1,20
-      read(11,*,end=99)paramNT(i)
-      nn=nn+1
+         read(11,*,end=99)paramNT(i)
+         nn=nn+1
       enddo
    99 continue
 
