@@ -87,7 +87,6 @@ c-----------------------------------------------------------------------
 
       call cem_drift_newton_init ! paramNT
 
-
 c     adjust restart time step
       if (.not.usesteps) then
          if (ifrestart) then
@@ -135,11 +134,14 @@ c     compute initials
 
       call compute_f_couple(fn,cn_k,npts)
 
+      fnorm = 0.
       do ic = 1,lcdim
          fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)
-         fnorms(ic) = sqrt(fnorms(ic))
+c        fnorms(ic) = sqrt(fnorms(ic))
+         fnorm = fnorm + fnorms(ic)
       enddo
-      fnorm = glmax(fnorms,lcdim)
+      fnorm = sqrt(fnorm)
+c     fnorm = glmax(fnorms,lcdim)
       f_now = fnorm
 
 c     Start timer
@@ -157,10 +159,9 @@ c        determine dtNT, dt
             dtNT = param(1)
          else
             call get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
+            call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
          endif
          dtNTinv = 1./dtNT
-
-         call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
          dtinv = 1./dt
 
          call compute_cfl(npts)
@@ -247,18 +248,21 @@ c        for next pseudo-time step
          enddo
 
 c        compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
+         fnorm = 0.
          do ic = 1,lcdim
             fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)  
-            fnorms(ic) = sqrt(fnorms(ic))
+            fnorm = fnorm + fnorms(ic)
+c           fnorms(ic) = sqrt(fnorms(ic))
          enddo
-         fnorm  = glmax(fnorms,lcdim)
+         fnorm = sqrt(fnorm)
+c        fnorm  = glmax(fnorms,lcdim)
          f_pre = f_now  ! set up old fnorm to f_pre
          f_now = fnorm  ! set up new fnorm to f_now
 
-         if (nid.eq.0) write(6,*)istep,iterNT,f_now,f_pre,'fnorm'
-         if (nid.eq.0) write(6,*)istep,iterNT,ratio,rnorm,rinorm,
-     $                        NTstep_norm,'gnorm'
-         if (nid.eq.0) write(6,*)istep,iterNT,dtNT,dt,'dtNT'
+         if (nid.eq.0) write(6,*)istep,iterNT,f_pre,f_now,'fnorm'
+         if (nid.eq.0) write(6,*)istep,iterNT,ratio,rinorm,rnorm,'gnorm'
+         if (nid.eq.0) write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
+         if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT'dtNT'
 
 c        compute the CPU_time
          cpu_dtime = dclock()-cpu_dtime
