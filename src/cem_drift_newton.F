@@ -275,7 +275,7 @@ c        fnorm  = glmax(fnorms,lcdim)
          if (nid.eq.0) write(6,*)istep,iterNT,f_pre,f_now,'fnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,ratio,rinorm,rnorm,'gnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
-         if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT'dtNT'
+         if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT,'dtNT'
 
 c        compute the CPU_time
          cpu_dtime = dclock()-cpu_dtime
@@ -376,7 +376,7 @@ c-----------------------------------------------------------------------
       
       call cem_drift_sem_bdf1_newton(c_in,c_out,n,iflag)
 
-      call sub3(f_out,c_out(1,iflag),c_in(1,iflag),n)
+      call sub3(f_out,c_out(1,abs(iflag)),c_in(1,abs(iflag)),n)
       call cmult(f_out,dtinv,n)
 
       return
