@@ -441,13 +441,12 @@ c-----------------------------------------------------------------------
       unorm = sqrt(unorm)
 
       eps = (1+unorm)*1e-14   ! formula for varing eps
-      eps = sqrt(eps)         
-c     for using the case using "ub" filled with previous
-c     step info first and Dirichlet info on the boundary 
-c     this eps will blow up because of pnorm = 0 
-      eps = eps/pnorm  
-      epsinv = 1./eps         
-
+      eps = sqrt(eps)         ! for using the case using  
+      eps = eps/pnorm         ! "ub" filled with previous
+      epsinv = 1./eps         ! step info first and Dirichelt 
+                              ! info on the boundary this
+                              ! eps will blow up becasue of 
+                              ! pnorm = 0
       do ic = 1,lcdim
          call copy(uep(1,ic),uc(1,ic),n)
       enddo
