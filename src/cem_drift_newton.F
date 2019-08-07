@@ -8,6 +8,7 @@ c     Those variables are defined in NEWTON
       subroutine cem_drift_newton_init
 c-----------------------------------------------------------------------      
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'  ! lcdim
@@ -63,6 +64,7 @@ c     using variables cN and cP in DRIFT
       subroutine cem_drift_newton
 c-----------------------------------------------------------------------      
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'      
@@ -336,6 +338,7 @@ c     Output   gn_n
       subroutine compute_gk(g_out,f,ck,c0,n)
 c-----------------------------------------------------------------------      
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT' !lcdim
@@ -364,6 +367,7 @@ c
       subroutine compute_f_sep(f_out,c_in,iflag,n)
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -390,6 +394,7 @@ c
       subroutine compute_f_couple(f_out,c_in,n)
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -421,6 +426,7 @@ c           f(u_k + eps*s_k) has to be computed in each GMRES iteration
       subroutine JacobiMatVec(Jp,p,uc,fi,n,iflag,isep)
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -470,6 +476,7 @@ c-----------------------------------------------------------------------
 c     Fully-coupled Jacobian
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -524,6 +531,7 @@ c-----------------------------------------------------------------------
       subroutine JacobiMatVec_steric(Jp,p,uc,fi,n)! w = A v 
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -577,6 +585,7 @@ c-----------------------------------------------------------------------
 c     Solve the Helmholtz equation by right-preconditioned
 c     GMRES iteration.
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'FDMH1'
@@ -895,8 +904,13 @@ c      return
 c      end
 c---------------------------------------------------------------------
       subroutine cem_drift_sem_bdf1_newton(cinput,coutput,n,iflag)
+c     Three mode: (switch iflag)
+c      0 couple:        update all the fields: cN(s) and potent
+c      i separate:      update potent and one of cN(i)
+c     -i fully-separate:update potent(-1) or cN(-2) or cP(-3)
 c---------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -1128,6 +1142,7 @@ c------------------------------------------------------------------------
       subroutine read_paramNT
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -1171,6 +1186,7 @@ c-----------------------------------------------------------------------
       subroutine write_paramNT
 c-----------------------------------------------------------------------
       implicit none
+
       include 'SIZE'
       include 'TOTAL'
       include 'DRIFT'
@@ -1235,7 +1251,9 @@ c-----------------------------------------------------------------------
       end
 c-----------------------------------------------------------------------
       subroutine get_J(c_in,pert,invtau,pstep,nn,ncdim)
+
       implicit none                         
+
       include 'SIZE'                       
       include 'TOTAL'                     
       include 'DRIFT'                    
@@ -1345,7 +1363,9 @@ c           call cmult(ff(1,ic),invtau,nn)
       end           
 c-----------------------------------------------------------------------
       subroutine get_J_new(c_in,pert,invtau,pstep,nn,ncdim)
+
       implicit none                         
+
       include 'SIZE'                       
       include 'TOTAL'                     
       include 'DRIFT'                    
