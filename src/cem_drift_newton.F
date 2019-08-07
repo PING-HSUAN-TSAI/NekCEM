@@ -719,8 +719,183 @@ c     call ortho   (res) ! Orthogonalize wrt null space, if present
 
       return
       end
+c-----------------------------------------------------------------------
+      subroutine drift_hmh_gmres_newton_fc
+     $           (phi_fc,res_fc,uc,f_fc,wt,nion,n,res_out,forcing)
+c     Solve the Helmholtz equation by right-preconditioned
+c     GMRES iteration.
+c     fully coupled
+c-----------------------------------------------------------------------
+      implicit none
 
-cC-----------------------------------------------------------------------
+      include 'SIZE'
+      include 'TOTAL'
+      include 'FDMH1'
+      include 'DRIFT'
+      include 'NEWTON'
+      include 'NMGMRES'
+
+      real     phi_fc(lpts1,nion),res_fc(lpts1,nion),wt(lpts1)
+      real     eps,uc(lpts1,nion),f_fc(lpts1,nion)
+      real     res_out,forcing,tol,alpha,l,temp
+      real     rnorm,tolpss
+      real     glsc3
+      real*8   etime1,dnekclock
+
+      integer  i,j,k,ic,iconv,iter,m
+      integer  n,nion,outer
+
+c      if (nid.eq.0) write(6,*) 'start: hmh_gmres'
+     
+      iter  = 0
+      m     = lgmres
+
+c     tolps = tol
+c     tolpss= tolps
+      iconv = 0
+      
+      call rzero(x_NT,lpts1*(LDIMT-1))
+      call rzero(h_NT,m*m)
+
+      outer = 0
+      do while (iconv.eq.0.and.iter.lt.500)
+         outer = outer+1
+         if(iter.eq.0) then
+            do ic = 1,nion
+               call copy(r_NT(1,ic),res_fc(1,ic),n) ! r = res
+            enddo
+         else
+            ! update residual
+            do ic=1,nion
+               call copy(r_NT(1,ic),res_fc(1,ic),n) ! r = res
+            enddo
+               call JacobiMatVec_fc(w_NT,x_NT,uc,f_fc,n) ! w = A x
+            do ic=1,nion
+               call add2s2 (r_NT(1,ic),w_NT(1,ic),-1.,n) ! r = r - w
+            enddo
+         endif
+
+         gamma_NT(1) = 0.
+         do ic=1,nion
+            gamma_NT(1) = gamma_NT(1)
+     $                  + glsc3(r_NT(1,ic),r_NT(1,ic),wt,n) ! gamma  = (r,r)
+         enddo
+         gamma_NT(1) = sqrt(gamma_NT(1)) ! gamma  = sqrt{ (r,r) }
+
+         tolps = forcing*gamma_NT(1) ! tolerance for gmres                   
+         tolpss = tolps              ! by using inexact Newton method
+                                     ! 0.1 for forcing term and is changable
+c        tolps = 1E-10 ! exact Newton,Lan
+
+         ! check for lucky convergence
+         rnorm = 0.
+         if(gamma_NT(1) .eq. 0.) goto 9000
+
+         temp = 1./gamma_NT(1)
+         do ic=1,nion
+            call cmult2(v_NT(1,ic,1),r_NT(1,ic),temp,n) ! v  = r / gamma
+         enddo                                          !  1            1
+                                                  
+         !write(6,*) 'start form m-th krylov subspace'
+         do j=1,m
+            iter = iter+1
+
+            call JacobiMatVec_fc(w_NT,v_NT(1,1,j),uc,f_fc,n) ! w = A v
+
+            ! modified Gram-Schmidt
+            do i=1,j
+
+               h_NT(i,j)=0.0
+               do ic=1,nion
+                  h_NT(i,j)=h_NT(i,j)
+     $                     + glsc3(w_NT(1,ic),v_NT(1,ic,i),wt,n) ! h    = (w,v )
+               enddo                                             !  i,j         i
+
+               do ic=1,nion
+                  call add2s2(w_NT(1,ic),v_NT(1,ic,i),-h_NT(i,j),n) ! w = w - h    v
+               enddo                                                !          i,j  i
+            enddo                                 
+
+            ! apply Givens rotations to new column
+            do i=1,j-1
+               temp = h_NT(i,j)
+               h_NT(i  ,j)=  c_NT(i)*temp + s_NT(i)*h_NT(i+1,j)
+               h_NT(i+1,j)= -s_NT(i)*temp + c_NT(i)*h_NT(i+1,j)
+            enddo
+            alpha = 0.0
+
+            do ic=1,nion                                             !            ______
+               alpha = alpha + glsc3(w_NT(1,ic),w_NT(1,ic),wt,n)     ! alpha =  \/ (w,w)
+            enddo
+            alpha = sqrt(alpha)
+
+            if(alpha.eq.0.) goto 900 !converged
+            l = sqrt(h_NT(j,j)*h_NT(j,j)+alpha*alpha)
+            temp = 1./l
+            c_NT(j) = h_NT(j,j) * temp
+            s_NT(j) = alpha  * temp
+            h_NT(j,j) = l
+            gamma_NT(j+1) = -s_NT(j) * gamma_NT(j)
+            gamma_NT(j)   =  c_NT(j) * gamma_NT(j)
+
+            rnorm = abs(gamma_NT(j+1))
+
+c            if ((nid.eq.0).and.(istep.le.2))
+c     $           write (6,66) iter,tolpss,rnorm,istep
+   66       format(i5,1p2e12.5,i8,' gmres_newton rnorm')
+
+            if (rnorm .lt. tolps) goto 900 !converged
+            if (j.eq.m) goto 1000 !not converged, restart
+
+            temp = 1./alpha
+            do ic=1,nion
+               call cmult2(v_NT(1,ic,j+1),w_NT(1,ic),temp,n)   ! v    = w / alpha
+            enddo                                              !  j+1
+         enddo
+
+c        write(6,*) 'end of forming m-th krylov subspace'
+  900    iconv = 1
+         res_out = rnorm   ! output |Ax-b|
+         if (nid.eq.0) write(6,*) istep,iterNT,
+     $                 rnorm/tolpss,'forcing_term'
+ 1000    continue
+
+c        back substitution
+c             -1
+c        c = H   gamma
+c        write(6,*) 'start solving least squre problem'
+         do k=j,1,-1
+            temp = gamma_NT(k)
+            do i=j,k+1,-1
+               temp = temp - h_NT(k,i)*c_NT(i)
+            enddo
+            c_NT(k) = temp/h_NT(k,k)
+         enddo
+         !sum up Arnoldi vectors
+         do i=1,j
+            do ic=1,nion
+               call add2s2(x_NT(1,ic),v_NT(1,ic,i),c_NT(i),n) ! x = x + c  z
+            enddo                                             !          i  i
+         enddo                               
+c     write(6,*) 'end of solving least squre problem'
+      enddo
+ 9000 continue
+
+      do ic=1,nion
+         call copy(phi_fc(1,ic),x_NT(1,ic),n)
+      enddo
+
+c     call ortho   (res) ! Orthogonalize wrt null space, if present
+
+      if ((nid.eq.0).and. (mod(istep,iocomm).eq.0) ) then
+          write(6,9999) istep,iterNT,iter,tolpss
+      endif
+
+ 9999 format(' ',' ',i9,i6,'  gmres_newton_iteration#',i6,1p1e12.4)
+
+      return
+      end
+c------------------------------------------------------------------------
 c      subroutine drift_hmh_gmres_NTsteric(uC,fC,uref,fi,wt,nion,n,tol)
 cc-----------------------------------------------------------------------
 cc     For Steric term, involving cross term linear system 
@@ -994,13 +1169,13 @@ c 10   format('     energy: ',1p1e18.7, ' at time=',1p1e12.4)
       return
       end
 c-----------------------------------------------------------------------
+      subroutine get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,iflag)
 c     This routine deals with the selection for dtNT
 c     - SER
 c        dtNT = dtNT * f_pre/f_now
 c     - fixed increasing rate 
 c        dtNt = dtNT * c
 c     input: all, output: dtNT
-      subroutine get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,iflag)
 c-----------------------------------------------------------------------
       implicit none
 
