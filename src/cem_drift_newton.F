@@ -466,6 +466,61 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+      subroutine JacobiMatVec_fc(Jp,p,uc,fi,n)
+c     Fully-coupled Jacobian
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'NEWTON'
+      include 'POISSON'
+
+      real     Jp(lpts1,lcdim),p(lpts1,lcdim)
+      real     uc(lpts1,lcdim)      ! variable 
+      real     fi(lpts1,lcdim)            ! parameters
+      real     uep(lpts1,lcdim)     ! uc + eps p
+      real     foi(lpts1,lcdim),fon(lpts1,lcdim)
+      integer  n,ic
+      real     eps,pnorm,unorm,glsc3 
+
+      pnorm = 0.0
+      unorm = 0.0
+      do ic=1,lcdim
+      pnorm = pnorm + glsc3(p(1,ic),p(1,ic),mult,n)
+      unorm = unorm + glsc3(uc(1,ic),uc(1,ic),mult,n)
+      enddo
+      pnorm = sqrt(pnorm)
+      unorm = sqrt(unorm)
+
+      eps = (1+unorm)*1e-14   ! formula for varing eps
+      eps = sqrt(eps)         ! for using the case using 
+                              ! "ub" filled with previous
+                              !  step info first and 
+                              !  Dirichlet info on the boundary
+      eps = eps/pnorm         ! this eps will blow up because of 
+                              ! pnorm = 0
+      epsinv = 1./eps         
+
+      do ic = 1,lcdim
+      call add3s2 (uep(1,ic),uc(1,ic),p(1,ic),1.0,eps,n) ! uep = u + eps*p
+      enddo
+
+      call compute_f_couple(fon,uep,n)
+
+      do ic=1,lcdim
+      call sub3   (foi(1,ic),fon(1,ic),fi(1,ic),n)
+      enddo
+
+      do ic=1,lcdim
+      call cmult  (foi(1,ic),epsinv*dtNT,n) ! foi = (fo-fi)*dt_newton/eps
+      call sub3   (Jp(1,ic),p(1,ic),foi(1,ic),n)
+      call cmult  (Jp(1,ic),dtNTinv,n)     ! Jp = p/dt_newton - (fo-f)/eps
+      enddo                                       ! case with divided by dt_newton
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine JacobiMatVec_steric(Jp,p,uc,fi,n)! w = A v 
 c-----------------------------------------------------------------------
       implicit none
