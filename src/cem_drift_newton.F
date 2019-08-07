@@ -454,10 +454,8 @@ c-----------------------------------------------------------------------
 
       if (isep.eq.0) then
          call compute_f_couple(fon,uep,n)
-      else
-         do ic = 1,lcdim
-            call compute_f_sep(fon(1,ic),uep,ic,n)
-         enddo
+      elseif (isep.eq.1) then
+         call compute_f_sep(fon(1,ic),uep,ic,n)
       endif
       call sub3   (foi,fon(1,iflag),fi,n)
 
