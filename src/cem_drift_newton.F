@@ -934,13 +934,15 @@ c---------------------------------------------------------------------
       else ! seperate
          call cem_drift_source
          call cem_drift_poisson
-         call cem_drift_sem_bdf1_init
          BDFcnt(1) = BDFcnt(1) + 1
+
+         call cem_drift_sem_bdf1_init
 
          call cem_drift_rhs_bdf1(iflag)
          call cem_drift_lhs_bdf1(iflag)
          BDFcnt(iflag+1) = BDFcnt(iflag+1) + 1
       endif
+
       do ic = 1,lcdim
          call copy(coutput(1,ic),cN(1,ic),n)
       enddo
