@@ -1808,7 +1808,7 @@ c              call add3s2(c_out(1,ic),c_in(1,ic),p(1,ic),1.0,pert,nn)
             enddo
 c           call add3s2(J_out(1,1),p(1,1),fdiff(1,1),invtau,          
 c    $           -pertinv,nn)                                      
-            do ic = 1,ncfim
+            do ic = 1,ncdim
                call dssum  (J_out(1,ic),nx1,ny1,nz1) ! Copy "1" to all elements
             enddo
 
@@ -1820,6 +1820,7 @@ c           Now, output the "j"th column of A
                if (int(flag(ii,ee)).ne.0) then 
                   write(50,77)J_out((ee-1)*nxyz+ii,ic)
                endif
+   77          format(e24.15)
             enddo
             enddo
             enddo
