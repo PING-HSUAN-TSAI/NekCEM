@@ -1703,3 +1703,126 @@ c           Now, output the "j"th column of A
       enddo
       enddo
       end
+c-----------------------------------------------------------------------
+      subroutine get_full_J(c_in,pert,invtau,pstep,nn,ncdim)
+
+      implicit none                         
+
+      include 'SIZE'                       
+      include 'TOTAL'                     
+      include 'DRIFT'                    
+      include 'POISSON'
+                                       
+      real J_out(lpts1,ncdim)          
+      real fi(lpts1,ncdim),ff(lpts1,ncdim),fdiff(lpts1,ncdim)  
+      real c_in(lpts1,ncdim),c_out(lpts1,ncdim) 
+      real p(lpts1,ncdim)                  
+      real flag(lx1*ly1*lz1,lelt)
+      real uin(lx1*ly1*lz1,lelt),uout(lx1*ly1*lz1,lelt)
+      real pert,invtau,pertinv                    
+      real glsc2
+      integer ncdim,nn,pstep
+      integer ic,i,j,k,k1                  
+      integer e,ee,icc
+      integer re,ii,jj,global_n,nglob
+      character(20) filename1
+                                           
+      pertinv = 1./pert                    
+      write(6,*)'====================='    
+      write(6,*)'Begin computing J1'        
+      write(6,*)'Parameter check'          
+      write(6,*)'pert',pert,'pertinv',pertinv
+      write(6,*)'dtNTinv',invtau            
+      write(6,*)'pstep',pstep               
+      write(6,*)'nn',nn,lpts1           
+      write(6,*)'====================='     
+
+      call compute_f_couple(fi,c_in,nn)   
+
+      nxyz = lx1*ly1*lz1
+      write(6,*)'nxyz',nxyz
+
+      global_n = glsc2(dmask(1,1),mult,nn)
+      write(6,*)'global_n',global_n
+      nglob    = global_n + 0.4          ! Rounding
+
+      do e=1,nelv
+         re = e 
+         call cfill(flag(1,e),float(re),nxyz)
+      enddo
+      call dsop(flag,'min',nx1,ny1,nz1)
+                                            
+      j=0
+      do e=1,nelv
+      do jj=1,nxyz
+         re = e
+         ! Found a real dof
+         if (int(flag(jj,e)).eq.re.and.dmask((e-1)*nxyz+jj,1).ne.0) 
+     $   then 
+            j = j+1
+            flag(jj,e) = j
+         else
+            flag(jj,e) = 0
+         endif
+      enddo
+      enddo
+
+      write(filename1,'(a,i0,a)') 'Jacobian_',pstep,'.dat'        
+      open(50,file=filename1)                                      
+      j = 0
+      write(6,*)'check degree',(nelv-1)*nxyz+nxyz,nn
+
+      do icc=1,ncdim
+      do e=1,nelv
+      do jj=1,nxyz
+
+         do ic = 1,ncdim                                               
+            call rzero(p(1,ic),nn)                                   
+         enddo                                                         
+
+         if (int(flag(jj,e)).ne.0) then  ! Next column of identity
+            j=j+1
+            p((e-1)*nxyz+jj,icc) = 1
+            call dssum  (p(1,icc) ,nx1,ny1,nz1) ! Copy "1" to all elements
+            call col2   (p(1,icc),mult,nn) ! do the average
+
+            do ic = 1,ncdim                             
+               do ii=1,nn
+                  c_out(ii,ic) = c_in(ii,ic)+pert*p(ii,ic)
+               enddo
+c              call add3s2(c_out(1,ic),c_in(1,ic),p(1,ic),1.0,pert,nn) 
+            enddo                                                     
+
+            call compute_f_couple(ff,c_out,nn)                      
+            do ic = 1,ncdim                                           
+               call sub3(fdiff(1,ic),ff(1,ic),fi(1,ic),nn)          
+            enddo                                                     
+            do ic = 1,ncdim
+               do ii=1,nn
+                  J_out(ii,ic) = invtau*p(ii,ic)-pertinv*fdiff(ii,ic)
+               enddo
+            enddo
+c           call add3s2(J_out(1,1),p(1,1),fdiff(1,1),invtau,          
+c    $           -pertinv,nn)                                      
+            do ic = 1,ncfim
+               call dssum  (J_out(1,icc),nx1,ny1,nz1) ! Copy "1" to all elements
+            enddo
+
+c           Now, output the "j"th column of A
+            i = 0
+            do icc=1,ncdim
+            do ee=1,nelv
+            do ii=1,nxyz
+               if (int(flag(ii,ee)).ne.0) then 
+                  write(50,77)J_out((ee-1)*nxyz+ii,icc)
+               endif
+            enddo
+            enddo
+            enddo
+         endif
+
+      enddo
+      enddo
+      enddo
+
+      end
