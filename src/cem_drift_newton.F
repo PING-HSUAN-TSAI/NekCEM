@@ -201,6 +201,10 @@ c           determine inexactNT
             if (ifsteric) then
 c              call drift_hmh_gmres_NTsteric(sn_k,gn_n,cn_k,fn
 c     $           ,mult,lcdim,npts,tolGMRES)
+            elseif (ifsep.eq.-1) then
+               call drift_hmh_gmres_newton_fc
+     $            (sn_k,gn_n,cn_k,fn,mult,lcdim,npts,res_gmres(1)
+     $            ,inexactNT(1))
             else
                do ic = 1,lcdim
                   call drift_hmh_gmres_newton(sn_k(1,ic),gn_n(1,ic)
@@ -1706,11 +1710,11 @@ c           Now, output the "j"th column of A
 c-----------------------------------------------------------------------
       subroutine get_full_J(c_in,pert,invtau,pstep,nn,ncdim)
 
-      implicit none                         
+      implicit none
 
-      include 'SIZE'                       
-      include 'TOTAL'                     
-      include 'DRIFT'                    
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
       include 'POISSON'
                                        
       real J_out(lpts1,ncdim)          
