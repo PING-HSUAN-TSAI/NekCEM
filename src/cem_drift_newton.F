@@ -37,7 +37,7 @@ c     Set default ParamNT
         dtNT = param(1)      ! pseudo-transient time step
                              ! it can grow as istep increase 
 
-        ifsep     = 0        ! -1=fully couple, 0=couple, 1=separate
+        ifsep     = -1       ! -1=fully couple, 0=couple, 1=separate
         inexactNT_flag = 0   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
         dt_flag   = 1        ! 0: fixed dt  1: dt = const * dtNT
         dtNT_flag = 2        ! 1: dtNT=c*dtNT  2:SER  -2:SER + constraint
@@ -476,6 +476,76 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+c     This routine computes Jp where J is the Jacobian matrix and p 
+c     is a vector with 2nd-order finite difference 
+c     
+c   
+c        J_k s_k = s_k - (dt /eps) *  ( f(u_k + eps*s_k) - f(u_k) )
+c   
+c     where f(u_k) has been store in each Newton iteration
+c           f(u_k + eps*s_k) has to be computed in each GMRES iteration
+      subroutine JacobiMatVec_2nd_fc(Jp,p,uc,fi,n)
+c-----------------------------------------------------------------------
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'NEWTON'
+      include 'POISSON'
+
+      real     Jp(lpts1,lcdim),p(lpts1,lcdim)
+      real     uc(lpts1,lcdim)      ! variable
+      real     fi(lpts1,lcdim)      ! parameters
+      real     uep1(lpts1,lcdim)     ! uc + eps p
+      real     uep2(lpts1,lcdim)     ! uc - eps p
+      real     foi(lpts1,lcdim),fon1(lpts1,lcdim)
+      real     fon2(lpts1,lcdim)
+      integer  n,ic
+      real     eps,pnorm,unorm,glsc3
+      real     meps
+
+      pnorm = 0.0
+      unorm = 0.0
+      do ic=1,lcdim
+         pnorm = pnorm + glsc3(p(1,ic),p(1,ic),mult,n)
+         unorm = unorm + glsc3(uc(1,ic),uc(1,ic),mult,n)
+      enddo
+      pnorm = sqrt(pnorm)
+      unorm = sqrt(unorm)
+
+      eps = (1+unorm)*1e-14   ! formula for varing eps
+      eps = sqrt(eps)         ! for using the case using
+                              ! "ub" filled with previous
+                              !  step info first and
+                              !  Dirichlet info on the boundary
+      eps = eps/pnorm         ! this eps will blow up because of
+                              ! pnorm = 0
+      meps = -1.0*eps
+      epsinv = 1./(2*eps)
+      if (nid.eq.0) write(6,*)'Jacobi-eps',eps,epsinv
+
+      do ic = 1,lcdim
+         call add3s2(uep1(1,ic),uc(1,ic),p(1,ic),1.0,eps,n) ! uep = u + eps*p
+         call add3s2(uep2(1,ic),uc(1,ic),p(1,ic),1.0,meps,n) ! uep = u - eps*p
+      enddo
+
+      call compute_f_couple(fon1,uep1,n)
+      call compute_f_couple(fon2,uep2,n)
+
+      do ic=1,lcdim
+         call sub3(foi(1,ic),fon1(1,ic),fon2(1,ic),n)
+      enddo
+
+      do ic=1,lcdim
+         call cmult(foi(1,ic),epsinv*dtNT,n) ! foi = (fo-fi)*dt_newton/eps
+         call sub3 (Jp(1,ic),p(1,ic),foi(1,ic),n)
+         call cmult(Jp(1,ic),dtNTinv,n)      ! Jp = p/dt_newton - (fo-f)/eps
+      enddo                                  ! case with divided by dt_newton
+
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine JacobiMatVec_fc(Jp,p,uc,fi,n)
 c     Fully-coupled Jacobian
 c-----------------------------------------------------------------------
@@ -773,6 +843,7 @@ c     tolpss= tolps
             do ic=1,nion
                call copy(r_NT(1,ic),res_fc(1,ic),n) ! r = res
             enddo
+c              call JacobiMatVec_2nd_fc(w_NT,x_NT,uc,f_fc,n) ! w = A x
                call JacobiMatVec_fc(w_NT,x_NT,uc,f_fc,n) ! w = A x
             do ic=1,nion
                call add2s2 (r_NT(1,ic),w_NT(1,ic),-1.,n) ! r = r - w
@@ -805,6 +876,7 @@ c        tolps = 1E-10 ! exact Newton,Lan
             iter = iter+1
 
             call JacobiMatVec_fc(w_NT,v_NT(1,1,j),uc,f_fc,n) ! w = A v
+c           call JacobiMatVec_2nd_fc(w_NT,v_NT(1,1,j),uc,f_fc,n) ! w = A v
 
             ! modified Gram-Schmidt
             do i=1,j
