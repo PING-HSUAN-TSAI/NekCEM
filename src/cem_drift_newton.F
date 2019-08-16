@@ -1860,7 +1860,6 @@ c-----------------------------------------------------------------------
             j=j+1
             p((e-1)*nxyz+jj,icc) = 1
             call dssum  (p(1,icc) ,nx1,ny1,nz1) ! Copy "1" to all elements
-            call col2   (p(1,icc),mult,nn) ! do the average
 
             do ic = 1,ncdim                             
                do ii=1,nn
