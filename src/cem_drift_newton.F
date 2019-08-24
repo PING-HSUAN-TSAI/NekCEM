@@ -58,12 +58,12 @@ c     Set default ParamNT
 
       endif
 
-      if (nid.eq.0) then 
+      if (nid.eq.0) then
          write(6,*)' '
          write(6,*)'JFNK Solver parameters:'
          write(6,*)' '
          write(6,*)'Newton max iter:',maxit
-         write(6,*)'Initial pseudo-time:',dtNT 
+         write(6,*)'Initial pseudo-time:',dtNT
          write(6,*)'ifsep:',ifsep
          write(6,*)'inexactNT_flag:',inexactNT_flag
          write(6,*)'dt_flag:',dt_flag
@@ -96,8 +96,10 @@ c-----------------------------------------------------------------------
       include 'RTIMER'
 
       real glmax,glsc3,glsum
-      real rnorm,rnorms(lcdim),rnorms_pre(lcdim),res_gmres(lcdim)
-      real rinorm,rinorms(lcdim),ratio
+      real gnorm,gnorm_pre,gnorms(lcdim),gnorms_pre(lcdim)
+      real gnorm_now
+      real res_gmres(lcdim)
+      real ginorm,ginorms(lcdim),ratio
       real fnorm,fnorms(lcdim)
       real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim),NTstep_norm
       real norm_ck0,norm_sk
@@ -191,11 +193,21 @@ c        determine dtNT, dt
 
          call compute_cfl(npts)
 
-         if (dt_flag.ne.0) call compute_f_couple(fn,c_k0,npts) ! update f_k0 if dt changed
+c        if (dt_flag.ne.0) call compute_f_couple(fn,c_k0,npts) ! update f_k0 if dt changed
+         call compute_f_couple(fn,c_k0,npts)
          call compute_gk(gn_n,fn,cn_k,c_k0,npts) ! compute rhs g_k for GMRES
          do ic = 1,lcdim
             call chsign (gn_n(1,ic),npts)
          enddo
+
+         ! compute gnorm_0
+         gnorm_pre = 0.
+         do ic = 1,lcdim
+            gnorms_pre(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
+            gnorm_pre = gnorm_pre + gnorms_pre(ic)
+         enddo
+         gnorm_pre = sqrt(gnorm_pre)
+         gnorm = gnorm_pre
         
 c        if (mod(istep,10).eq.0) then
 c        if (istep.le.15)then
@@ -209,16 +221,18 @@ c        Start Newton iteration
             norm_ck0 = 0.
             do ic = 1,lcdim
                norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
-c              norms_ck0(ic) = sqrt(norms_ck0(ic))
                norm_ck0 = norm_ck0 + norms_ck0(ic)
             enddo
             norm_ck0 = sqrt(norm_ck0)
 
 c           determine inexactNT
+            if (nid.eq.0) write(6,*)'rrrr',gnorm,gnorm_pre
             do ic = 1,lcdim
-               call get_inexactNT(inexactNT(ic),rnorms(ic),
-     $         rnorms_pre(ic),res_gmres(ic),iterNT,inexactNT_flag)
+               call get_inexactNT(inexactNT(ic),gnorm,
+     $         gnorm_pre,res_gmres(ic),iterNT,inexactNT_flag)
             enddo
+            if (nid.eq.0) write(6,*)'inexact',inexactNT(1),inexactNT(2)
+            gnorm_pre = gnorm
 
             if (ifsteric) then
 c              call drift_hmh_gmres_NTsteric(sn_k,gn_n,cn_k,fn
@@ -244,35 +258,30 @@ c     $           ,mult,lcdim,npts,tolGMRES)
                call chsign(gn_n(1,ic),npts)
             enddo
 
-            rnorm = 0.
+            gnorm = 0.
             do ic = 1,lcdim
-               rnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
-               rnorm = rnorm + rnorms(ic)
-c              rnorms(ic) = sqrt(rnorms(ic))
+               gnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
+               gnorm = gnorm + gnorms(ic)
             enddo
-            rnorm = sqrt(rnorm)
-c           rnorm = glmax(rnorms,lcdim)
+            gnorm = sqrt(gnorm)
 
             if (iterNT.eq.1) then
-               rinorm=rnorm
-               if (nid.eq.0) write(6,*)istep,iterNT,rinorm,'rinorm'
+               ginorm=gnorm
+               if (nid.eq.0) write(6,*)istep,iterNT,ginorm,'ginorm'
             endif
-            ratio=rnorm/rinorm 
+            ratio=gnorm/ginorm 
 
 c           check rel. update step size of NT to avoid stalling
             norm_sk = 0.
             do ic = 1,lcdim
                norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
                norm_sk = norm_sk + norms_sk(ic)
-c              norms_sk(ic) = sqrt(norms_sk(ic))
-c              sk_ratio(ic) = norms_sk(ic) / norms_ck0(ic)
             enddo
             norm_sk = sqrt(norm_sk)
-c           NTstep_norm = glmax(sk_ratio,lcdim)
             NTstep_norm = norm_sk/norm_ck0
 
             if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
-     $         istep,iterNT,ratio,rnorm,rinorm,dtNT,dt,NTstep_norm
+     $         istep,iterNT,ratio,gnorm,ginorm,dtNT,dt,NTstep_norm
 
             if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
 
@@ -283,6 +292,7 @@ c           NTstep_norm = glmax(sk_ratio,lcdim)
          do ic = 1,lcdim
             call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
          enddo                           
+
 c        for next pseudo-time step
          do ic = 1,lcdim
             call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
@@ -293,15 +303,13 @@ c        compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
          do ic = 1,lcdim
             fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)  
             fnorm = fnorm + fnorms(ic)
-c           fnorms(ic) = sqrt(fnorms(ic))
          enddo
          fnorm = sqrt(fnorm)
-c        fnorm  = glmax(fnorms,lcdim)
          f_pre = f_now  ! set up old fnorm to f_pre
          f_now = fnorm  ! set up new fnorm to f_now
 
          if (nid.eq.0) write(6,*)istep,iterNT,f_pre,f_now,'fnorm'
-         if (nid.eq.0) write(6,*)istep,iterNT,ratio,rinorm,rnorm,'gnorm'
+         if (nid.eq.0) write(6,*)istep,iterNT,ratio,ginorm,gnorm,'gnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT,'dtNT'
 
