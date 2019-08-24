@@ -16,6 +16,8 @@ c-----------------------------------------------------------------------
 
       integer ic
 
+      if (nid.eq.0) write(6,*)'inside cem_drift_newton_init'
+
       do ic = 1,lcdim
         call rzero(fn  (1,ic),npts)
         call rzero(gn_n(1,ic),npts)
@@ -51,10 +53,30 @@ c     Set default ParamNT
         tolNT     = 1e-5     ! tolerance for Newton method
         tolNTstep = 1e-9     ! to avoid NT loop stalling
         max_dtNT  = 1E20     ! Max. of dtNT, avoid NaN
-        min_ftol  = 1E-12    ! Min. of f norm, avoid NaN
+        min_ftol  = 1E-16    ! Min. of f norm, avoid NaN
         max_dt    = 1E-1     ! Max. of dt, should be satisfied CFL
 
       endif
+
+      if (nid.eq.0) then 
+         write(6,*)' '
+         write(6,*)'JFNK Solver parameters:'
+         write(6,*)' '
+         write(6,*)'Newton max iter:',maxit
+         write(6,*)'Initial pseudo-time:',dtNT 
+         write(6,*)'ifsep:',ifsep
+         write(6,*)'inexactNT_flag:',inexactNT_flag
+         write(6,*)'dt_flag:',dt_flag
+         write(6,*)'dtNT_flag:',dtNT_flag
+         write(6,*)'dt_const:',dt_const
+         write(6,*)'tolNR:',tolNT
+         write(6,*)'tolNTstep:',tolNTstep
+         write(6,*)'max_dtNT:',max_dtNT
+         write(6,*)'min_ftol:',min_ftol
+         write(6,*)'max_dt:',max_dt
+      endif
+
+      if (nid.eq.0) write(6,*)'exit cem_drift_newton_init'
 
       return
       end
