@@ -62,18 +62,18 @@ c     Set default ParamNT
          write(6,*)' '
          write(6,*)'JFNK Solver parameters:'
          write(6,*)' '
-         write(6,*)'Newton max iter:',maxit
-         write(6,*)'Initial pseudo-time:',dtNT
-         write(6,*)'ifsep:',ifsep
-         write(6,*)'inexactNT_flag:',inexactNT_flag
-         write(6,*)'dt_flag:',dt_flag
-         write(6,*)'dtNT_flag:',dtNT_flag
-         write(6,*)'dt_const:',dt_const
-         write(6,*)'tolNR:',tolNT
-         write(6,*)'tolNTstep:',tolNTstep
-         write(6,*)'max_dtNT:',max_dtNT
-         write(6,*)'min_ftol:',min_ftol
-         write(6,*)'max_dt:',max_dt
+         write(6,*)'jfnk_newton_miter:   ',maxit
+         write(6,*)'jfnk_init_pseudo_tau:',dtNT
+         write(6,*)'jfnk_ifsep:          ',ifsep
+         write(6,*)'jfnk_inexactNT_flag: ',inexactNT_flag
+         write(6,*)'jfnk_dt_flag:        ',dt_flag
+         write(6,*)'jfnk_dtNT_flag:      ',dtNT_flag
+         write(6,*)'jfnk_dt_const:       ',dt_const
+         write(6,*)'jfnk_tolNT:          ',tolNT
+         write(6,*)'jfnk_NTsteptol:      ',tolNTstep
+         write(6,*)'jfnk_max_dtNT:       ',max_dtNT
+         write(6,*)'jfnk_min_ftol:       ',min_ftol
+         write(6,*)'jfnk_max_dt:         ',max_dt
       endif
 
       if (nid.eq.0) write(6,*)'exit cem_drift_newton_init'
