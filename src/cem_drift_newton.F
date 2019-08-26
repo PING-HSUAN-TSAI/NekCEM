@@ -119,15 +119,12 @@ c-----------------------------------------------------------------------
       include 'CTIMER'
       include 'RTIMER'
 
+      real gnorms(lcdim),gnorms_pre(lcdim),ginorms(lcdim)
+      real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim)
+      real res_gmres(lcdim),fnorms(lcdim)
       real glmax,glsc3,glsum
-      real gnorm,gnorm_pre,gnorms(lcdim),gnorms_pre(lcdim)
-      real gnorm_now
-      real res_gmres(lcdim)
-      real ginorm,ginorms(lcdim),ratio
-      real fnorm,fnorms(lcdim)
-      real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim),NTstep_norm
-      real norm_ck0,norm_sk
-      real temp(lpts1)
+      real gnorm,gnorm_pre,gnorm_now,ginorm,fnorm,ratio
+      real norm_ck0,norm_sk,NTstep_norm
 
       integer i,j,k,n,ic
 
@@ -183,7 +180,7 @@ c     Start pseudo-time step
 
          cpu_dtime = dclock()
 
-c        determine dtNT, dt
+c        determine dtNT,dt
          if ((istep.eq.1)) then
             dtNT = param(1)
          else
@@ -219,16 +216,12 @@ c        endif
 
          call newton_solver(gnorm_pre,gnorm,ginorm)
 
+c        Copy final newton solution as next pseudo-time solution
          do ic = 1,lcdim
             call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
          enddo                           
 
-c        for next pseudo-time step
-         do ic = 1,lcdim
-            call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
-         enddo
-
-c        compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
+c        Update norm of f after newton solver
          fnorm = 0.
          do ic = 1,lcdim
             fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)  
@@ -246,24 +239,22 @@ c        compute the CPU_time
          cpu_t = cpu_t+cpu_dtime
          cpu_t_step = cpu_t/istep
          cpu_p_t = glsum(cpu_t_step /npts,1)/np
-        
          time = time + dtNT
     
          cpu_chk = dclock()
          call userchk
          cpu_chk = dclock()-cpu_chk
 
+         do ic = 1,lcdim
+            call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
+         enddo
          call cem_out
 
          call post_BDFcnt
 
-         if (irestart.gt.0) then ! write newton.restart
-            if (mod(istep,irestart).eq.0) then
-               if (nid.eq.0) then
-                  write(6,*)'Writing newton.restart! at istep=',istep
-                  call write_paramNT
-               endif
-            endif
+c        Write Newton.restart
+         if (irestart.gt.0.AND.mod(istep,irestart).eq.0) then 
+            call write_paramNT
          endif 
 
          istep = istep+1
@@ -1507,57 +1498,61 @@ c-----------------------------------------------------------------------
       integer i
       real paramNT(20)
 
-      open(unit=11,file='newton.restart')
+      if (nid.eq.0) then 
+         write(6,*)'Writing newton.restart! at istep=',istep
 
-      paramNT(1)  = 0
-      paramNT(2)  = 0
-      paramNT(3)  = ifsep
-      paramNT(4)  = dtNT
-      paramNT(5)  = max_dtNT
-      paramNT(6)  = min_ftol
-      paramNT(7)  = f_pre
-      paramNT(8)  = alphaNT
-      paramNT(9)  = maxit
-      paramNT(10) = jaceps
-      paramNT(11) = tolNT
-      paramNT(12) = 0
-      paramNT(14) = 0
-      paramNT(15) = 0
-      paramNT(16) = 0
-      paramNT(17) = 0
-      paramNT(18) = 0
-      paramNT(19) = 0
-      paramNT(20) = 0
+         open(unit=11,file='newton.restart')
 
-      write(11,3)int(paramNT(1)),'1: '
-      write(11,3)int(paramNT(2)),'2: '
-      write(11,3)int(paramNT(3)),
-     $           '3: ifsep,(int) 0 = couple, 1 = seperate'
-      write(11,7)paramNT(4),'4: dtNT, pseudo-timestep tau'
-      write(11,7)paramNT(5),'5: max_dtNT, Max. of dtNT, avoid NaN'
-      write(11,7)paramNT(6),'6: min_ftol, Min. of f norm,  avoid NaN'
-      write(11,7)paramNT(7),'7: f_pre, f norm from previous step'
-      write(11,7)paramNT(8),
-     $           '8: alpha, relaxation parameter \alpha \in (0,1]'
-      write(11,3)int(paramNT(9)),
-     $           '9: maxit, (int) iteration for Newton method'
-      write(11,7)paramNT(10),
-     $           '10: jaceps, perturbation parameter for Jacobi-free'
-      write(11,7)paramNT(11),'11: tolNT, tolerance for Newton method'
-      write(11,7)paramNT(12),'12: '
-      write(11,7)paramNT(13),'13: tolGMRES, tolerance for GMRES'
-      write(11,7)paramNT(14),'14: '
-      write(11,7)paramNT(15),'15: '
-      write(11,7)paramNT(16),'16: '
-      write(11,7)paramNT(17),'17: '
-      write(11,7)paramNT(18),'18: '
-      write(11,7)paramNT(19),'19: '
-      write(11,7)paramNT(20),'20: '
+         paramNT(1)  = 0
+         paramNT(2)  = 0
+         paramNT(3)  = ifsep
+         paramNT(4)  = dtNT
+         paramNT(5)  = max_dtNT
+         paramNT(6)  = min_ftol
+         paramNT(7)  = f_pre
+         paramNT(8)  = alphaNT
+         paramNT(9)  = maxit
+         paramNT(10) = jaceps
+         paramNT(11) = tolNT
+         paramNT(12) = 0
+         paramNT(14) = 0
+         paramNT(15) = 0
+         paramNT(16) = 0
+         paramNT(17) = 0
+         paramNT(18) = 0
+         paramNT(19) = 0
+         paramNT(20) = 0
 
+         write(11,3)int(paramNT(1)),'1: '
+         write(11,3)int(paramNT(2)),'2: '
+         write(11,3)int(paramNT(3)),
+     $              '3: ifsep,(int) 0 = couple, 1 = seperate'
+         write(11,7)paramNT(4),'4: dtNT, pseudo-timestep tau'
+         write(11,7)paramNT(5),'5: max_dtNT, Max. of dtNT, avoid NaN'
+         write(11,7)paramNT(6),'6: min_ftol, Min. of f norm,  avoid NaN'
+         write(11,7)paramNT(7),'7: f_pre, f norm from previous step'
+         write(11,7)paramNT(8),
+     $              '8: alpha, relaxation parameter \alpha \in (0,1]'
+         write(11,3)int(paramNT(9)),
+     $              '9: maxit, (int) iteration for Newton method'
+         write(11,7)paramNT(10),
+     $              '10: jaceps, perturbation parameter for Jacobi-free'
+         write(11,7)paramNT(11),'11: tolNT, tolerance for Newton method'
+         write(11,7)paramNT(12),'12: '
+         write(11,7)paramNT(13),'13: tolGMRES, tolerance for GMRES'
+         write(11,7)paramNT(14),'14: '
+         write(11,7)paramNT(15),'15: '
+         write(11,7)paramNT(16),'16: '
+         write(11,7)paramNT(17),'17: '
+         write(11,7)paramNT(18),'18: '
+         write(11,7)paramNT(19),'19: '
+         write(11,7)paramNT(20),'20: '
+
+         close(11)
+
+      endif
     3 format(I4,'              ',A)
     7 format(E13.4'     ',A)
-
-      close(11)
 
       return
       end
