@@ -150,7 +150,7 @@ c     the initial step
 
 c     compute initials
 
-      call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
+      call dt_update(dt,max_dt,dtNT,dt_const,dt_flag)
       dtinv = 1./dt
       
       do ic = 1,lcdim
@@ -184,8 +184,9 @@ c        determine dtNT, dt
          if ((istep.eq.1)) then
             dtNT = param(1)
          else
-            call dtNT_update(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
-            call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
+            call dtNT_update(dtNT,max_dtNT,f_pre,f_now,
+     $      min_ftol,dtNT_flag)
+            call dt_update(dt,max_dt,dtNT,dt_const,dt_flag)
          endif
          dtNTinv = 1./dtNT
          dtinv = 1./dt
@@ -1240,14 +1241,14 @@ c-----------------------------------------------------------------------
 
       endif
 
-      if (dtNT.gt.max_dtNT) dtNT = dtNT
+      if (dtNT.gt.max_dtNT) dtNT = max_dtNT
 
       return
       end
 c-----------------------------------------------------------------------
 c     This routine deals with the relation between dtNT and dt
 c     input: all, output: dt
-      subroutine get_dt(dt,max_dt,dtNT,const,iflag)
+      subroutine dt_update(dt,max_dt,dtNT,const,iflag)
 c-----------------------------------------------------------------------
       implicit none
 
