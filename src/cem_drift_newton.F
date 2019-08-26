@@ -90,6 +90,15 @@ c     get initial condition
          call copy (c_k0(1,ic),cn_k(1,ic),npts)
       enddo
 
+      istep = 0
+      call userchk
+      call cem_out
+
+      if (nsteps.eq.0) then
+         if (nid.eq.0) write(6,*)'nsteps=0'
+         call cem_end
+      endif
+
 c     get initial f norm 
       call compute_f_couple(fn,cn_k,npts)
 
@@ -133,6 +142,7 @@ c-----------------------------------------------------------------------
 
       irestart = param(83)
 
+c     Initial step
       call cem_drift_newton_init(fnorm)
       f_now = fnorm
 
@@ -163,12 +173,6 @@ c     adjust restart time step
       endif
     3 format(' istep =', i10,'  to',i10)
 
-c     the initial step
-      istep = ifirst-1
-      call userchk
-      call cem_out
-
-      if (nsteps.eq.0) call cem_end
 
 c     Start timer
       cpu_t = 0.0
@@ -180,7 +184,7 @@ c     Start pseudo-time step
 
          cpu_dtime = dclock()
 
-c        determine dtNT,dt
+c        Determine dtNT,dt
          if ((istep.eq.1)) then
             dtNT = param(1)
          else
@@ -200,7 +204,7 @@ c        if (dt_flag.ne.0) call compute_f_couple(fn,c_k0,npts) ! update f_k0 if 
             call chsign (gn_n(1,ic),npts)
          enddo
 
-         ! compute gnorm_0
+c        Compute gnorm_0
          gnorm_pre = 0.
          do ic = 1,lcdim
             gnorms_pre(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
@@ -218,8 +222,8 @@ c        endif
 
 c        Copy final newton solution as next pseudo-time solution
          do ic = 1,lcdim
-            call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
-         enddo                           
+            call copy(c_k0(1,ic),cn_k(1,ic),npts)
+         enddo
 
 c        Update norm of f after newton solver
          fnorm = 0.
@@ -234,20 +238,21 @@ c        Update norm of f after newton solver
          if (nid.eq.0) write(6,*)istep,iterNT,f_pre,f_now,'fnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT,'dtNT'
 
-c        compute the CPU_time
+c        Compute the CPU_time
          cpu_dtime = dclock()-cpu_dtime
          cpu_t = cpu_t+cpu_dtime
          cpu_t_step = cpu_t/istep
          cpu_p_t = glsum(cpu_t_step /npts,1)/np
          time = time + dtNT
     
+         do ic = 1,lcdim
+            call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
+         enddo
+
          cpu_chk = dclock()
          call userchk
          cpu_chk = dclock()-cpu_chk
 
-         do ic = 1,lcdim
-            call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
-         enddo
          call cem_out
 
          call post_BDFcnt
