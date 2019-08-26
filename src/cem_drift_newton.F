@@ -199,14 +199,13 @@ c        Determine dtNT,dt
 
 c        if (dt_flag.ne.0) call compute_f_couple(fn,c_k0,npts) ! update f_k0 if dt changed
          call compute_f_couple(fn,c_k0,npts)
-         call compute_gk(gn_n,fn,cn_k,c_k0,npts) ! compute rhs g_k for GMRES
          do ic = 1,lcdim
-            call chsign (gn_n(1,ic),npts)
+            call copy(gn_n(1,ic),fn(1,ic),npts)
          enddo
 
-c        Compute gnorm_0
-         call compute_norm(gnorm_pre,gn_n,npts)
-         gnorm = gnorm_pre
+c        gnorm is same as fnorm when iterNT=0
+         gnorm = fnorm
+         gnorm_pre = fnorm
 
          if (nid.eq.0) then 
             write(6,*)'initial g and f',gnorm,gnorm_pre,fnorm,f_now
@@ -1357,12 +1356,7 @@ c------------------------------------------------------------------------
 c        Start Newton iteration
          do iterNT=1,maxit
 
-            norm_ck0 = 0.
-            do ic = 1,lcdim
-               norms_ck0(ic) = glsc3(cn_k(1,ic),cn_k(1,ic),mult,npts)
-               norm_ck0 = norm_ck0 + norms_ck0(ic)
-            enddo
-            norm_ck0 = sqrt(norm_ck0)
+            call compute_norm(norm_ck0,cn_k,npts)
 
 c           Determine inexactNT
             if (nid.eq.0) write(6,*)'rrrr',gnorm,gnorm_pre
@@ -1372,6 +1366,12 @@ c           Determine inexactNT
             enddo
             if (nid.eq.0) write(6,*)'inexact',inexactNT(1),inexactNT(2)
             gnorm_pre = gnorm
+
+            if (iterNT.ne.1) then
+               do ic = 1,lcdim
+                  call chsign(gn_n(1,ic),npts)
+               enddo
+            endif
 
             if (ifsep.eq.-1) then
                call drift_hmh_gmres_newton_fc
@@ -1391,31 +1391,17 @@ c           Determine inexactNT
 
             call compute_f_couple(fn,cn_k,npts)
             call compute_gk(gn_n,fn,cn_k,c_k0,npts)  ! checking tol. + next NT iter
-            do ic = 1,lcdim
-               call chsign(gn_n(1,ic),npts)
-            enddo
 
-            gnorm = 0.
-            do ic = 1,lcdim
-               gnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
-               gnorm = gnorm + gnorms(ic)
-            enddo
-            gnorm = sqrt(gnorm)
+            call compute_norm(gnorm,gn_n,npts)
 
             if (iterNT.eq.1) then
                ginorm=gnorm
                if (nid.eq.0) write(6,*)istep,iterNT,ginorm,'ginorm'
             endif
-
             ratio=gnorm/ginorm 
 
 c           Check rel. update step size of NT to avoid stalling
-            norm_sk = 0.
-            do ic = 1,lcdim
-               norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
-               norm_sk = norm_sk + norms_sk(ic)
-            enddo
-            norm_sk = sqrt(norm_sk)
+            call compute_norm(norm_sk,sn_k,npts)
             NTstep_norm = norm_sk/norm_ck0
 
             if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
