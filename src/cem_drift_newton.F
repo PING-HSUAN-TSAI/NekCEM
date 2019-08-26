@@ -214,80 +214,7 @@ c        if (istep.le.15)then
 c           call get_J_new(cn_k,jaceps,dtNTinv,istep,npts,2)
 c        endif
 
-
-c        Start Newton iteration
-         do iterNT=1,maxit
-
-            norm_ck0 = 0.
-            do ic = 1,lcdim
-               norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
-               norm_ck0 = norm_ck0 + norms_ck0(ic)
-            enddo
-            norm_ck0 = sqrt(norm_ck0)
-
-c           determine inexactNT
-            if (nid.eq.0) write(6,*)'rrrr',gnorm,gnorm_pre
-            do ic = 1,lcdim
-               call get_inexactNT(inexactNT(ic),gnorm,
-     $         gnorm_pre,res_gmres(ic),iterNT,inexactNT_flag)
-            enddo
-            if (nid.eq.0) write(6,*)'inexact',inexactNT(1),inexactNT(2)
-            gnorm_pre = gnorm
-
-            if (ifsteric) then
-c              call drift_hmh_gmres_NTsteric(sn_k,gn_n,cn_k,fn
-c     $           ,mult,lcdim,npts,tolGMRES)
-            elseif (ifsep.eq.-1) then
-               call drift_hmh_gmres_newton_fc
-     $            (sn_k,gn_n,cn_k,fn,mult,lcdim,npts,res_gmres(1)
-     $            ,inexactNT(1))
-            else
-               do ic = 1,lcdim
-                  call drift_hmh_gmres_newton(sn_k(1,ic),gn_n(1,ic)
-     $               ,cn_k,fn(1,ic),mult,lcdim,npts
-     $               ,res_gmres(ic),inexactNT(ic),ic,ifsep)
-               enddo
-            endif
-            do ic = 1,lcdim
-               call add2s2(cn_k(1,ic),sn_k(1,ic),alphaNT,npts) ! cp_k=cp_k+alpha*sp_k
-            enddo
-
-            call compute_f_couple(fn,cn_k,npts)
-            call compute_gk(gn_n,fn,cn_k,c_k0,npts)  ! checking tol. + next NT iter
-            do ic = 1,lcdim
-               call chsign(gn_n(1,ic),npts)
-            enddo
-
-            gnorm = 0.
-            do ic = 1,lcdim
-               gnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
-               gnorm = gnorm + gnorms(ic)
-            enddo
-            gnorm = sqrt(gnorm)
-
-            if (iterNT.eq.1) then
-               ginorm=gnorm
-               if (nid.eq.0) write(6,*)istep,iterNT,ginorm,'ginorm'
-            endif
-            ratio=gnorm/ginorm 
-
-c           check rel. update step size of NT to avoid stalling
-            norm_sk = 0.
-            do ic = 1,lcdim
-               norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
-               norm_sk = norm_sk + norms_sk(ic)
-            enddo
-            norm_sk = sqrt(norm_sk)
-            NTstep_norm = norm_sk/norm_ck0
-
-            if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
-     $         istep,iterNT,ratio,gnorm,ginorm,dtNT,dt,NTstep_norm
-
-            if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) goto 900
-
-         enddo ! newton iteration
- 90      format('newton iter',2i6,1p6e12.4)   
-900      continue
+         call newton_solver(gnorm_pre,gnorm,ginorm)
 
          do ic = 1,lcdim
             call copy(c_k0(1,ic),cn_k(1,ic),npts)   ! update c_k0 for compute gn
@@ -309,8 +236,8 @@ c        compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
          f_now = fnorm  ! set up new fnorm to f_now
 
          if (nid.eq.0) write(6,*)istep,iterNT,f_pre,f_now,'fnorm'
-         if (nid.eq.0) write(6,*)istep,iterNT,ratio,ginorm,gnorm,'gnorm'
-         if (nid.eq.0) write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
+c        if (nid.eq.0) write(6,*)istep,iterNT,ratio,ginorm,gnorm,'gnorm'
+c        if (nid.eq.0) write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT,'dtNT'
 
 c        compute the CPU_time
@@ -1422,6 +1349,113 @@ c------------------------------------------------------------------------
       return
       end
 c------------------------------------------------------------------------
+      subroutine newton_solver(gnorm_pre,gnorm,ginorm)
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'      
+      include 'POISSON'
+      include 'NEWTON'
+      include 'CTIMER'
+      include 'RTIMER'
+
+      real glsc3
+      real gnorm,gnorm_pre,gnorms(lcdim),gnorms_pre(lcdim)
+      real gnorm_now
+      real res_gmres(lcdim)
+      real ginorm,ginorms(lcdim),ratio
+      real fnorm,fnorms(lcdim)
+      real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim),NTstep_norm
+      real norm_ck0,norm_sk
+
+      integer i,j,k,n,ic
+
+      integer irestart ! print restart file for NT
+      integer ifirst,ilast
+
+c        Start Newton iteration
+         do iterNT=1,maxit
+
+
+            norm_ck0 = 0.
+            do ic = 1,lcdim
+               norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
+               norm_ck0 = norm_ck0 + norms_ck0(ic)
+            enddo
+            norm_ck0 = sqrt(norm_ck0)
+
+c           Determine inexactNT
+            if (nid.eq.0) write(6,*)'rrrr',gnorm,gnorm_pre
+            do ic = 1,lcdim
+               call get_inexactNT(inexactNT(ic),gnorm,
+     $         gnorm_pre,res_gmres(ic),iterNT,inexactNT_flag)
+            enddo
+            if (nid.eq.0) write(6,*)'inexact',inexactNT(1),inexactNT(2)
+            gnorm_pre = gnorm
+
+            if (ifsep.eq.-1) then
+               call drift_hmh_gmres_newton_fc
+     $            (sn_k,gn_n,cn_k,fn,mult,lcdim,npts,res_gmres(1)
+     $            ,inexactNT(1))
+            else
+               do ic = 1,lcdim
+                  call drift_hmh_gmres_newton(sn_k(1,ic),gn_n(1,ic)
+     $               ,cn_k,fn(1,ic),mult,lcdim,npts
+     $               ,res_gmres(ic),inexactNT(ic),ic,ifsep)
+               enddo
+            endif
+
+            do ic = 1,lcdim
+               call add2s2(cn_k(1,ic),sn_k(1,ic),alphaNT,npts) ! cp_k=cp_k+alpha*sp_k
+            enddo
+
+            call compute_f_couple(fn,cn_k,npts)
+            call compute_gk(gn_n,fn,cn_k,c_k0,npts)  ! checking tol. + next NT iter
+            do ic = 1,lcdim
+               call chsign(gn_n(1,ic),npts)
+            enddo
+
+            gnorm = 0.
+            do ic = 1,lcdim
+               gnorms(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
+               gnorm = gnorm + gnorms(ic)
+            enddo
+            gnorm = sqrt(gnorm)
+
+            if (iterNT.eq.1) then
+               ginorm=gnorm
+               if (nid.eq.0) write(6,*)istep,iterNT,ginorm,'ginorm'
+            endif
+
+            ratio=gnorm/ginorm 
+
+c           Check rel. update step size of NT to avoid stalling
+            norm_sk = 0.
+            do ic = 1,lcdim
+               norms_sk(ic) = glsc3(sn_k(1,ic),sn_k(1,ic),mult,npts)
+               norm_sk = norm_sk + norms_sk(ic)
+            enddo
+            norm_sk = sqrt(norm_sk)
+            NTstep_norm = norm_sk/norm_ck0
+
+            if ((nid.eq.0).and.(mod(istep,iocomm).eq.0)) write(6,90)
+     $         istep,iterNT,ratio,gnorm,ginorm,dtNT,dt,NTstep_norm
+
+            if ((ratio.lt.tolNT).OR.(NTstep_norm.lt.tolNTstep)) then
+               if (nid.eq.0) then
+                  write(6,*)istep,iterNT,ratio,ginorm,gnorm,'gnorm'
+                  write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
+               endif
+               exit
+            endif
+
+         enddo ! newton iteration
+
+ 90      format('newton iter',2i6,1p6e12.4)   
+      return
+      end
+c-----------------------------------------------------------------------
       subroutine read_paramNT
 c-----------------------------------------------------------------------
       implicit none
