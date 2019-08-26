@@ -303,16 +303,17 @@ c-----------------------------------------------------------------------
       include 'DRIFT' !lcdim
       include 'NEWTON'
 
-      integer n,ic
+      integer n,ic,ii
       real g_out(lpts1,lcdim),
      $     ck   (lpts1,lcdim),
      $     c0   (lpts1,lcdim),
-     $     f    (lpts1,lcdim)
+     $     f    (lpts1,lcdim),
+     $     cdiff(lpts1,lcdim)
 
       do ic = 1,lcdim
-         call add3s3(g_out(1,ic),ck(1,ic),f(1,ic),c0(1,ic)
-     $              ,1.0,-1.0*dtNT,-1.0,n)
-         call cmult(g_out(1,ic),dtNTinv,n) ! case with divided by dt_newton
+         call sub3(cdiff(1,ic),ck(1,ic),c0(1,ic),n)
+         call cmult(cdiff(1,ic),dtNTinv,n)
+         call sub3(g_out(1,ic),cdiff(1,ic),f(1,ic),n)
       enddo
 
       return
