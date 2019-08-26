@@ -236,8 +236,6 @@ c        compute the norm of f(c_p)^{istep-1} and f(c_n)^{istep-1}
          f_now = fnorm  ! set up new fnorm to f_now
 
          if (nid.eq.0) write(6,*)istep,iterNT,f_pre,f_now,'fnorm'
-c        if (nid.eq.0) write(6,*)istep,iterNT,ratio,ginorm,gnorm,'gnorm'
-c        if (nid.eq.0) write(6,*)istep,iterNT,NTstep_norm,'stepnorm'
          if (nid.eq.0) write(6,*)istep,iterNT,dt,dtNT,'dtNT'
 
 c        compute the CPU_time
