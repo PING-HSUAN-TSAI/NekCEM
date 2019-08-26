@@ -149,7 +149,6 @@ c     the initial step
       if (nsteps.eq.0) call cem_end
 
 c     compute initials
-      epsinv = 1./jaceps   ! eps for approximation for jacobian
 
       call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
       dtinv = 1./dt
