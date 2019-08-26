@@ -185,7 +185,7 @@ c        determine dtNT, dt
          if ((istep.eq.1)) then
             dtNT = param(1)
          else
-            call get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
+            call dtNT_update(dtNT,max_dtNT,f_pre,f_now,min_ftol,dtNT_flag)
             call get_dt(dt,max_dt,dtNT,dt_const,dt_flag)
          endif
          dtNTinv = 1./dtNT
@@ -1200,7 +1200,7 @@ c 10   format('     energy: ',1p1e18.7, ' at time=',1p1e12.4)
       return
       end
 c-----------------------------------------------------------------------
-      subroutine get_dtNT(dtNT,max_dtNT,f_pre,f_now,min_ftol,iflag)
+      subroutine dtNT_update(dtNT,max_dtNT,f_pre,f_now,min_ftol,iflag)
 c     This routine deals with the selection for dtNT
 c     - SER
 c        dtNT = dtNT * f_pre/f_now
