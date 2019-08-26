@@ -5,7 +5,7 @@ c     By Ping Hsuan 06/27/2017
 c-----------------------------------------------------------------------
 c     This subroutine aim to initial variables for JFNK
 c     Those variables are defined in NEWTON
-      subroutine cem_drift_newton_init
+      subroutine cem_drift_newton_init(fnorm)
 c-----------------------------------------------------------------------      
       implicit none
 
@@ -13,7 +13,10 @@ c-----------------------------------------------------------------------
       include 'TOTAL'
       include 'DRIFT'  ! lcdim
       include 'NEWTON'
+      include 'POISSON'
 
+      real fnorm,fnorms(lcdim)
+      real glsc3
       integer ic
 
       if (nid.eq.0) write(6,*)'inside cem_drift_newton_init'
@@ -69,13 +72,33 @@ c     Set default ParamNT
          write(6,*)'jfnk_inexactNT_flag: ',inexactNT_flag
          write(6,*)'jfnk_dt_flag:        ',dt_flag
          write(6,*)'jfnk_dtNT_flag:      ',dtNT_flag
-         write(6,*)'jfnk_gllcr:       ',gllcr
+         write(6,*)'jfnk_gllcr:          ',gllcr
          write(6,*)'jfnk_tolNT:          ',tolNT
          write(6,*)'jfnk_NTsteptol:      ',tolNTstep
          write(6,*)'jfnk_max_dtNT:       ',max_dtNT
          write(6,*)'jfnk_min_ftol:       ',min_ftol
          write(6,*)'jfnk_max_dt:         ',max_dt
       endif
+
+c     Get initial local dt
+      call dt_update(dt,max_dt,dtNT,gllcr,dt_flag)
+      dtinv = 1./dt
+
+c     get initial condition
+      do ic = 1,lcdim
+         call copy (cn_k(1,ic),cN(1,ic),npts) 
+         call copy (c_k0(1,ic),cn_k(1,ic),npts)
+      enddo
+
+c     get initial f norm 
+      call compute_f_couple(fn,cn_k,npts)
+
+      fnorm = 0.
+      do ic = 1,lcdim
+         fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)
+         fnorm = fnorm + fnorms(ic)
+      enddo
+      fnorm = sqrt(fnorm)
 
       if (nid.eq.0) write(6,*)'exit cem_drift_newton_init'
 
@@ -113,7 +136,8 @@ c-----------------------------------------------------------------------
 
       irestart = param(83)
 
-      call cem_drift_newton_init ! paramNT
+      call cem_drift_newton_init(fnorm)
+      f_now = fnorm
 
 c     adjust restart time step
       if (.not.usesteps) then
@@ -148,27 +172,6 @@ c     the initial step
       call cem_out
 
       if (nsteps.eq.0) call cem_end
-
-c     compute initials
-      call dt_update(dt,max_dt,dtNT,gllcr,dt_flag)
-      dtinv = 1./dt
-      
-      do ic = 1,lcdim
-         call copy (cn_k(1,ic),cN(1,ic),npts) ! get the initial condition
-         call copy (c_k0(1,ic),cn_k(1,ic),npts)
-      enddo
-
-      call compute_f_couple(fn,cn_k,npts)
-
-      fnorm = 0.
-      do ic = 1,lcdim
-         fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)
-c        fnorms(ic) = sqrt(fnorms(ic))
-         fnorm = fnorm + fnorms(ic)
-      enddo
-      fnorm = sqrt(fnorm)
-c     fnorm = glmax(fnorms,lcdim)
-      f_now = fnorm
 
 c     Start timer
       cpu_t = 0.0
