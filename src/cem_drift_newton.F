@@ -255,13 +255,7 @@ c        compute the CPU_time
 
          call cem_out
 
-         if (nid.eq.0.AND.mod(istep,iocomm).eq.0) then ! conut #BDF1
-            write(6,*)'newton BDFcnt: istep = ',istep
-            write(6,*)'newton BDFcnt: #Poisson solver = ',BDFcnt(1)
-            do ic = 1,lcdim
-               write(6,991)ic,BDFcnt(ic+1)
-            enddo
-         endif
+         call post_BDFcnt
 
          if (irestart.gt.0) then ! write newton.restart
             if (mod(istep,irestart).eq.0) then
@@ -283,7 +277,6 @@ c        compute the CPU_time
       enddo ! pseudo-time step
 
   901 continue
-  991 format(' newton BDFcnt: #cN',I2,' solver = ',i10)
       
       call cem_end
 
@@ -1967,4 +1960,27 @@ c           Now, output the "j"th column of A
       enddo
       enddo
 
+      end
+c-----------------------------------------------------------------------
+      subroutine post_BDFcnt
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'  ! lcdim
+      include 'NEWTON'
+
+      integer ic
+
+      if (nid.eq.0.AND.mod(istep,iocomm).eq.0) then ! conut #BDF1
+         write(6,*)'newton BDFcnt: istep = ',istep
+         write(6,*)'newton BDFcnt: #Poisson solver = ',BDFcnt(1)
+         do ic = 1,lcdim
+            write(6,991)ic,BDFcnt(ic+1)
+         enddo
+      endif
+
+  991 format(' newton BDFcnt: #cN',I2,' solver = ',i10)
+
+      return
       end
