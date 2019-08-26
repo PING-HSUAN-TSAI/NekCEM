@@ -205,13 +205,12 @@ c        if (dt_flag.ne.0) call compute_f_couple(fn,c_k0,npts) ! update f_k0 if 
          enddo
 
 c        Compute gnorm_0
-         gnorm_pre = 0.
-         do ic = 1,lcdim
-            gnorms_pre(ic) = glsc3(gn_n(1,ic),gn_n(1,ic),mult,npts)
-            gnorm_pre = gnorm_pre + gnorms_pre(ic)
-         enddo
-         gnorm_pre = sqrt(gnorm_pre)
+         call compute_norm(gnorm_pre,gn_n,npts)
          gnorm = gnorm_pre
+
+         if (nid.eq.0) then 
+            write(6,*)'initial g and f',gnorm,gnorm_pre,fnorm,f_now
+         endif
         
 c        if (mod(istep,10).eq.0) then
 c        if (istep.le.15)then
@@ -226,12 +225,7 @@ c        Copy final newton solution as next pseudo-time solution
          enddo
 
 c        Update norm of f after newton solver
-         fnorm = 0.
-         do ic = 1,lcdim
-            fnorms(ic) = glsc3(fn(1,ic),fn(1,ic),mult,npts)  
-            fnorm = fnorm + fnorms(ic)
-         enddo
-         fnorm = sqrt(fnorm)
+         call compute_norm(fnorm,fn,npts)
          f_pre = f_now  ! set up old fnorm to f_pre
          f_now = fnorm  ! set up new fnorm to f_now
 
@@ -1351,27 +1345,21 @@ c------------------------------------------------------------------------
       include 'CTIMER'
       include 'RTIMER'
 
+      real ginorms(lcdim),gnorms(lcdim),gnorms_pre(lcdim)
+      real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim)
+      real res_gmres(lcdim),fnorms(lcdim)
+      real gnorm,gnorm_pre,gnorm_now,ginorm,ratio,fnorm
+      real norm_ck0,norm_sk,NTstep_norm
       real glsc3
-      real gnorm,gnorm_pre,gnorms(lcdim),gnorms_pre(lcdim)
-      real gnorm_now
-      real res_gmres(lcdim)
-      real ginorm,ginorms(lcdim),ratio
-      real fnorm,fnorms(lcdim)
-      real norms_sk(lcdim),norms_ck0(lcdim),sk_ratio(lcdim),NTstep_norm
-      real norm_ck0,norm_sk
 
       integer i,j,k,n,ic
-
-      integer irestart ! print restart file for NT
-      integer ifirst,ilast
 
 c        Start Newton iteration
          do iterNT=1,maxit
 
-
             norm_ck0 = 0.
             do ic = 1,lcdim
-               norms_ck0(ic) = glsc3(c_k0(1,ic),c_k0(1,ic),mult,npts)
+               norms_ck0(ic) = glsc3(cn_k(1,ic),cn_k(1,ic),mult,npts)
                norm_ck0 = norm_ck0 + norms_ck0(ic)
             enddo
             norm_ck0 = sqrt(norm_ck0)
@@ -1981,6 +1969,30 @@ c-----------------------------------------------------------------------
       endif
 
   991 format(' newton BDFcnt: #cN',I2,' solver = ',i10)
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine compute_norm(tmp,uu,n)
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT' !lcdim
+      include 'NEWTON'
+      include 'POISSON'
+
+      real tmp,tmps(lcdim)
+      real uu(lpts1,lcdim)
+      real glsc3
+      integer ic,n
+
+      tmp= 0.
+      do ic = 1,lcdim
+         tmps(ic) = glsc3(uu(1,ic),uu(1,ic),mult,n)  
+         tmp = tmp + tmps(ic)
+      enddo
+      tmp = sqrt(tmp)
 
       return
       end
