@@ -40,13 +40,14 @@ c     Set default ParamNT
                              ! it can grow as istep increase 
 
         ifsep     = -1       ! -1=fully couple, 0=couple, 1=separate
-        inexactNT_flag = 0   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
-        dt_flag   = 1        ! 0: fixed dt  1: dt = const * dtNT
+        inexactNT_flag = 1   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
+        dt_flag   = 0        ! 0: fixed dt  1: dt = const * dtNT
         dtNT_flag = 2        ! 1: dtNT=c*dtNT  2:SER  -2:SER + constraint
 
         alphaNT   = 1.0      ! relaxation parameter of NT solver \alpha \in (0,1]
         jaceps    = 1e-5     ! perturbation parameter for Jacobi-free
-        dt_const  = 1e-4     ! constant c for the formula dt = c * dtNT
+        gllcr     = 1e-4     ! global dtNT and local dt relation 
+                             ! constant c for the formula dt = c * dtNT
                              ! c = 1, 0.1, 0.01, 0.001, 0.0001
                              ! c = 0.0001 is the best case up to now
 
@@ -68,7 +69,7 @@ c     Set default ParamNT
          write(6,*)'jfnk_inexactNT_flag: ',inexactNT_flag
          write(6,*)'jfnk_dt_flag:        ',dt_flag
          write(6,*)'jfnk_dtNT_flag:      ',dtNT_flag
-         write(6,*)'jfnk_dt_const:       ',dt_const
+         write(6,*)'jfnk_gllcr:       ',gllcr
          write(6,*)'jfnk_tolNT:          ',tolNT
          write(6,*)'jfnk_NTsteptol:      ',tolNTstep
          write(6,*)'jfnk_max_dtNT:       ',max_dtNT
@@ -149,8 +150,7 @@ c     the initial step
       if (nsteps.eq.0) call cem_end
 
 c     compute initials
-
-      call dt_update(dt,max_dt,dtNT,dt_const,dt_flag)
+      call dt_update(dt,max_dt,dtNT,gllcr,dt_flag)
       dtinv = 1./dt
       
       do ic = 1,lcdim
@@ -186,7 +186,7 @@ c        determine dtNT, dt
          else
             call dtNT_update(dtNT,max_dtNT,f_pre,f_now,
      $      min_ftol,dtNT_flag)
-            call dt_update(dt,max_dt,dtNT,dt_const,dt_flag)
+            call dt_update(dt,max_dt,dtNT,gllcr,dt_flag)
          endif
          dtNTinv = 1./dtNT
          dtinv = 1./dt
