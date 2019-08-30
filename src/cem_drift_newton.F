@@ -238,8 +238,9 @@ c        Compute the CPU_time
          cpu_p_t = glsum(cpu_t_step /npts,1)/np
          time = time + dtNT
     
+c        For cemout
          do ic = 1,lcdim
-            call copy(cN(1,ic),cn_k(1,ic),npts) ! just for cem_out
+            call copy(cN(1,ic),cn_k(1,ic),npts) 
          enddo
 
          cpu_chk = dclock()
@@ -1359,12 +1360,10 @@ c        Start Newton iteration
             call compute_norm(norm_ck0,cn_k,npts)
 
 c           Determine inexactNT
-            if (nid.eq.0) write(6,*)'rrrr',gnorm,gnorm_pre
             do ic = 1,lcdim
                call get_inexactNT(inexactNT(ic),gnorm,
      $         gnorm_pre,res_gmres(ic),iterNT,inexactNT_flag)
             enddo
-            if (nid.eq.0) write(6,*)'inexact',inexactNT(1),inexactNT(2)
             gnorm_pre = gnorm
 
             if (iterNT.ne.1) then
@@ -1979,6 +1978,31 @@ c-----------------------------------------------------------------------
          tmp = tmp + tmps(ic)
       enddo
       tmp = sqrt(tmp)
+
+      return
+      end
+c-----------------------------------------------------------------------
+      subroutine outpost_helper(uu,n,ch3)
+      implicit none
+
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT' !lcdim
+      include 'NEWTON'
+      include 'POISSON'
+
+      real uu(lpts1,lcdim)
+      integer ic,n,ii
+      character*3 ch3 
+
+      if (nid.eq.0) then 
+         write(6,*)ch3
+         do ic = 1,lcdim
+            do ii=1,n
+               write(6,*)ic,ii,uu(ii,ic)
+            enddo
+         enddo
+      endif
 
       return
       end
