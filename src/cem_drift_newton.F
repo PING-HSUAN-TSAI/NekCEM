@@ -43,7 +43,7 @@ c     Set default ParamNT
                              ! it can grow as istep increase 
 
         ifsep     = -1       ! -1=fully couple, 0=couple, 1=separate
-        inexactNT_flag = 1   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
+        inexactNT_flag = 0   ! 0: fixed 0.1  1: r/r_pre  2: abs(r-res)/r_pre
         dt_flag   = 0        ! 0: fixed dt  1: dt = const * dtNT
         dtNT_flag = 2        ! 1: dtNT=c*dtNT  2:SER  -2:SER + constraint
 
@@ -730,7 +730,7 @@ c     call ortho   (res) ! Orthogonalize wrt null space, if present
           write(6,9999) istep,iterNT,iter,tolpss
       endif
 
- 9999 format(' ',' ',i9,i6,'  gmres_newton_iteration#',i6,1p1e12.4)
+ 9999 format(' ',' ',i9,i6,i6,1p1e12.4,'  gmres iteration in newton')
 
       return
       end
@@ -908,7 +908,7 @@ c     call ortho   (res) ! Orthogonalize wrt null space, if present
           write(6,9999) istep,iterNT,iter,tolpss
       endif
 
- 9999 format(' ',' ',i9,i6,'  gmres_newton_iteration#',i6,1p1e12.4)
+ 9999 format(' ',' ',i9,i6,i6,1p1e12.4,'  gmres iteration in newton')
 
       return
       end
@@ -1417,7 +1417,7 @@ c           Check rel. update step size of NT to avoid stalling
 
          enddo ! newton iteration
 
- 90      format('newton iter',2i6,1p6e12.4)   
+ 90      format(2i6,1p6e12.4,'  newton iter')
       return
       end
 c-----------------------------------------------------------------------
