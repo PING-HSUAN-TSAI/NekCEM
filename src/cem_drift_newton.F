@@ -1826,7 +1826,6 @@ c-----------------------------------------------------------------------
       real c_in(lpts1,ncdim),c_out(lpts1,ncdim) 
       real p(lpts1,ncdim)                  
       real flag(lx1*ly1*lz1,lelt)
-      real uin(lx1*ly1*lz1,lelt),uout(lx1*ly1*lz1,lelt)
       real pert,invtau,pertinv                    
       real glsc2
       integer ncdim,nn,pstep
